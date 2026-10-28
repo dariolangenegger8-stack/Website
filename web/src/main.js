@@ -1,3 +1,4 @@
+import { createPhotoReactions } from './photo-reactions.mjs';
 import { createChat } from './chat.mjs';
 import { createClient } from '@supabase/supabase-js';
 import { deleteOwnEntry, deletionDefinition, removeImage } from './deletion.mjs';
@@ -21,6 +22,8 @@ const photoButton = (src, alt) => `<button type="button" class="photo-trigger" a
 const deleteButton = (kind, entry) => entry.user_id === state.session?.user.id ? `<button class="delete-button" data-delete-kind="${kind}" data-delete-id="${escape(entry.id)}" ${blocked()?'disabled':''}>${kind==='photo'?'Foto':kind==='visit'?'Eintrag':'Tour'} löschen</button>` : '';
 const blocked = () => state.busy || !state.session || !state.loaded;
 const pattern = icon => `<div class="pattern" aria-hidden="true">${Array.from({length:18},(_,i)=>`<span style="left:${(i*37+4)%87}%;top:${18+i*55}px;transform:rotate(${i%2?22:-22}deg)">${icon}</span>`).join('')}</div>`;
+const reactions=createPhotoReactions({db,getUser:()=>state.session?.user,isAdmin:()=>state.admin,escape,memberButton});
+root.addEventListener('reaction-member',event=>openMember(event.detail));
 const chat=createChat({db,getUser:()=>state.session?.user,isAdmin:()=>state.admin,escape,memberButton});
 root.addEventListener('chat-member',event=>openMember(event.detail));
 function resetProof() { if (state.proofUrl) URL.revokeObjectURL(state.proofUrl); state.proof = null; state.proofUrl = null; }
@@ -78,7 +81,7 @@ async function adjustMix(delta) {
   await run(async()=>{const {error}=await db.rpc('adjust_mix',{delta});if(error)throw error;await loadMix();});
 }
 function photos() {
-  return `<section class="card"><h2>Foto teilen</h2><form id="photo-form"><label>Dein Moment<input name="caption" maxlength="180" placeholder="Was war dein Highlight?"></label><label>Foto für alle Mitglieder<input name="photo" type="file" accept="image/jpeg,image/png,image/webp" required ${blocked()?'disabled':''}></label>${btn('post','Foto teilen',blocked())}</form></section>${state.feed.map(p=>`<article class="card">${photoButton(p.url,p.caption||'Bergfoto')}<strong>${escape(p.caption||'Ein Moment am Berg')}</strong><p>${memberButton(p.user_id,p.display_name)} · ${date(p.created_at)}</p>${deleteButton('photo',p)}</article>`).join('')||'<p>Noch keine geteilten Fotos.</p>'}`;
+  return `<section class="card"><h2>Foto teilen</h2><form id="photo-form"><label>Dein Moment<input name="caption" maxlength="180" placeholder="Was war dein Highlight?"></label><label>Foto für alle Mitglieder<input name="photo" type="file" accept="image/jpeg,image/png,image/webp" required ${blocked()?'disabled':''}></label>${btn('post','Foto teilen',blocked())}</form></section>${state.feed.map(p=>`<article class="card">${photoButton(p.url,p.caption||'Bergfoto')}<strong>${escape(p.caption||'Ein Moment am Berg')}</strong><p>${memberButton(p.user_id,p.display_name)} · ${date(p.created_at)}</p><div data-reactions="${escape(p.id)}">${reactions.html(p.id)}</div>${deleteButton('photo',p)}</article>`).join('')||'<p>Noch keine geteilten Fotos.</p>'}`;
 }
 function memberButton(id,name) {
   return `<button class="member-link" data-member="${escape(id)}">${escape(name)}</button>`;
@@ -202,11 +205,13 @@ async function reduceAdminCounter(form) {
   });
 }
 function render() {
+  reactions.unmount();
   chat.unmount();
   closePhotoViewer();
   const titles={Berg:'Der Berg ruft.',Duell:'Deine Ranglisten.',Fotos:'Momente im Schnee.',Profil:'Dein Profil.',Admin:'Administration.',Chat:'Gemeinsamer Chat.'};
   root.innerHTML=`<main><header><a class="brand" href="/">◭ SKIDUELL</a><button id="account" class="profile" ${state.busy||state.active||state.draft?'disabled':''}>${state.session?'Abmelden':'Anmelden'}</button></header>${!configured?'<div class="setup">Vorschau · Online-Verbindung noch nicht eingerichtet</div>':''}<h1>${titles[state.tab]}</h1><div id="feedback" role="status" aria-live="polite">${state.error?`<p class="error">${escape(state.error)}</p>`:state.message?`<p class="success">${escape(state.message)}</p>`:''}</div>${state.session&&pendingImages().length?btn('retry-images','Bilddateien erneut löschen',state.busy,'outline'):''}${state.auth?authPanel():''}${state.session?btn('refresh',state.loaded?'↻ Aktualisieren':'Daten erneut laden',state.busy,'text-button'):''}${!state.session&&configured&&!state.auth?btn('join','Anmelden & mitmachen'):''}${state.tab==='Berg'?mountain():state.tab==='Duell'?rankings():state.tab==='Profil'?profilePage():state.tab==='Admin'?adminPage():state.tab==='Chat'?chat.html():photos()}</main><nav aria-label="Hauptnavigation">${[['Berg','◭'],['Duell','⚑'],['Fotos','▧'],['Chat','💬'],['Profil','◉'],...(state.admin?[['Admin','⚙']]:[])].map(([t,icon])=>`<button data-tab="${t}" class="${state.tab===t?'active':''}" aria-current="${state.tab===t?'page':'false'}"><span>${icon}</span>${t}</button>`).join('')}</nav>`;
   if(state.tab==='Chat')chat.mount(root);
+  if(state.tab==='Fotos')reactions.mount(root,state.feed.map(post=>post.id));
   bindPhotoViewer(root);
   bindProfileEditor();
   document.querySelectorAll('[data-admin-kind]').forEach(button=>button.onclick=()=>changeAdminList(button.dataset.adminKind));
@@ -302,5 +307,5 @@ async function stop(){if(blocked())return;clearWatch();state.active=false;state.
 async function persistTour(){if(blocked()||!state.draft)return;await run(async()=>{const {error}=await db.from('tours').upsert(state.draft,{onConflict:'id'});if(error)throw error;state.draft=null;state.message='Tour gespeichert.';await load()})}
 document.addEventListener('visibilitychange',()=>{previous=null;if(document.hidden&&state.active)state.message='Browser-Aufzeichnung kann bei gesperrtem Bildschirm aussetzen.';else if(state.active)render()});
 window.addEventListener('beforeunload',event=>{if(state.active||state.draft){event.preventDefault();event.returnValue=''}});
-if(db){db.auth.onAuthStateChange((_event,session)=>{epoch++;const changed=state.session?.user.id!==session?.user.id;state.session=session;if(changed){clearWatch();state.active=false;state.draft=null;resetProof();resetProfileEditor();chat.reset();Object.assign(state,{tours:[],visits:[],feed:[],leaders:[],beerLeaders:[],beerReady:false,beerError:'',mixLeaders:[],mixReady:false,mixError:'',profile:null,viewedProfile:null,profileError:'',admin:false,adminEntries:[],adminPage:0,adminMore:false,adminLoaded:false,loaded:false});}if(session){state.auth=false;queueMicrotask(()=>load())}render()});setInterval(()=>{if(state.session&&!state.busy&&!state.active)load()},45*60*1000);}
+if(db){db.auth.onAuthStateChange((_event,session)=>{epoch++;const changed=state.session?.user.id!==session?.user.id;state.session=session;if(changed){clearWatch();state.active=false;state.draft=null;resetProof();resetProfileEditor();chat.reset();reactions.reset();Object.assign(state,{tours:[],visits:[],feed:[],leaders:[],beerLeaders:[],beerReady:false,beerError:'',mixLeaders:[],mixReady:false,mixError:'',profile:null,viewedProfile:null,profileError:'',admin:false,adminEntries:[],adminPage:0,adminMore:false,adminLoaded:false,loaded:false});}if(session){state.auth=false;queueMicrotask(()=>load())}render()});setInterval(()=>{if(state.session&&!state.busy&&!state.active)load()},45*60*1000);}
 render();
