@@ -69,3 +69,7 @@ Der Browser-Smoke-Test startet selbst einen lokalen Vite-Server auf Port 5189. E
 ## 🍺 Bier-Rangliste (neue Migration)
 
 Nach der bestehenden Grundeinrichtung ausschließlich `supabase/migrations/202610280002_beer.sql` im Supabase-SQL-Editor ausführen. Die erste Migration nicht erneut ausführen. Diese additive Migration erhält vorhandene Touren, Bilder und Konten. Sie ergänzt einen eigenen Zähler pro Nutzer und eine Rangliste für Mitglieder. `+ 1 eintragen` erhöht atomar; `− 1 korrigieren` korrigiert bis mindestens null. Nur eigene Zähler können geändert werden. Bieranzahl wird selbst eingetragen, ohne Beweisfoto. Solange die Migration fehlt, zeigt nur der Bier-Bereich eine Einrichtungsmeldung; Ski, Après-Ski und Fotos funktionieren weiter. Kein Administratorzugriff auf Supabase ist hier verbunden, deshalb ist die Online-Migration noch manuell auszuführen.
+
+## 🍹 Mischen
+
+Für die neue eigenständige Rangliste nur `supabase/migrations/202610280003_mischen.sql` im Supabase-SQL-Editor ausführen. Sie benötigt die Grundeinrichtung mit `profiles`, verändert aber keine bestehenden Bier- oder Après-Ski-Einträge. Mischen hat eigene Zähler und RPCs, mit +1 und −1 bis mindestens null. Ohne angewendete Migration bleibt nur diese Rangliste deaktiviert.

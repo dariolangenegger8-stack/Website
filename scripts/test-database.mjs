@@ -18,6 +18,7 @@ try{
  `);
  await db.exec(await readFile(new URL('../supabase/migrations/202610280001_skiduell.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/202610280002_beer.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/202610280003_mischen.sql',import.meta.url),'utf8'));
  await db.query(`insert into auth.users values($1,'{"display_name":"Alice"}'),($2,'{"display_name":"Bob"}')`,[alice,bob]);
  const profiles=await db.query('select count(*)::int n from public.profiles');assert.equal(profiles.rows[0].n,2);
  await db.exec(`set role authenticated; set request.jwt.claim.sub='${alice}';`);
@@ -34,7 +35,16 @@ try{
  assert.equal((await db.query('select public.adjust_beer(1) n')).rows[0].n,2);
  assert.equal((await db.query('select public.adjust_beer(-1) n')).rows[0].n,1);
  await assert.rejects(()=>db.query('select public.adjust_beer(5)'));
+ assert.equal((await db.query('select public.adjust_mix(1) n')).rows[0].n,1);
+ assert.equal((await db.query('select public.adjust_mix(1) n')).rows[0].n,2);
+ assert.equal((await db.query('select public.adjust_mix(-1) n')).rows[0].n,1);
+ await assert.rejects(()=>db.query('select public.adjust_mix(7)'));
+ assert.equal((await db.query('select count from public.beer_counts')).rows[0].count,1);
  await db.exec(`set request.jwt.claim.sub='${bob}'`);
+ assert.equal((await db.query('select * from public.mix_counts')).rows.length,0);
+ assert.equal((await db.query('select * from public.mix_leaderboard()')).rows.find(p=>p.user_id===alice).mixes,1);
+ assert.equal((await db.query('select public.adjust_mix(-1) n')).rows[0].n,0);
+ assert.equal((await db.query(`update public.mix_counts set count=999 where user_id=$1 returning user_id`,[alice])).rows.length,0);
  assert.equal((await db.query('select * from public.beer_counts')).rows.length,0);
  assert.equal((await db.query('select * from public.beer_leaderboard()')).rows.find(p=>p.user_id===alice).beers,1);
  assert.equal((await db.query('select public.adjust_beer(-1) n')).rows[0].n,0);
@@ -53,6 +63,9 @@ try{
  await assert.rejects(()=>db.query('select * from public.leaderboard()'));
  await assert.rejects(()=>db.query('select * from public.beer_leaderboard()'));
  await assert.rejects(()=>db.query('select public.adjust_beer(1)'));
+ await assert.rejects(()=>db.query('select * from public.mix_leaderboard()'));
+ await assert.rejects(()=>db.query('select public.adjust_mix(1)'));
+ console.log('PASS: Mischen increment, correction, zero floor, isolation from beer, RLS, anonymous denial');
  console.log('PASS: beer increment, correction, zero floor, delta validation, cross-user isolation, shared totals, anonymous denial');
  console.log('PASS: migration, signup profiles, own tour insert, cross-user write denial, mandatory uploaded proof, private tours/proofs, aggregate ranking, anonymous denial');
 }finally{await db.close()}
