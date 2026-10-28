@@ -9,7 +9,7 @@ const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const configured = Boolean(url && key && /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/.test(url));
 const db = configured ? createClient(url, key) : null;
 const root = document.querySelector('#app');
-const state = { tab: 'Berg', ranking: 'ski', session: null, profile: null, viewedProfile: null, profileEditor: null, profileError: '', tours: [], visits: [], feed: [], leaders: [], beerLeaders: [], beerReady: false, beerError: '', mixLeaders: [], mixReady: false, mixError: '', busy: false, auth: false, loaded: false, error: '', message: '', proof: null, proofUrl: null, active: false, draft: null };
+const state = { tab: 'Berg', ranking: 'ski', session: null, profile: null, viewedProfile: null, profileEditor: null, profileError: '', admin: false, adminKind: 'photo', adminEntries: [], adminPage: 0, adminMore: false, adminLoaded: false, tours: [], visits: [], feed: [], leaders: [], beerLeaders: [], beerReady: false, beerError: '', mixLeaders: [], mixReady: false, mixError: '', busy: false, auth: false, loaded: false, error: '', message: '', proof: null, proofUrl: null, active: false, draft: null };
 let watcher = null, previous = null, started = 0, timer = null, epoch = 0;
 let metrics = { km: 0, ascent: 0, maxSpeed: null, seconds: 0 };
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -144,14 +144,58 @@ async function saveProfile() {
     if(cleanupFailed)state.error='Profil gespeichert. Alte Bilddateien konnten noch nicht entfernt werden. Bitte Bilddateien erneut löschen.';
   });
 }
+async function loadAdminStatus() {
+  if(!state.session)return;
+  const userId=state.session.user.id;
+  const {data,error}=await db.rpc('is_admin');
+  if(state.session?.user.id!==userId)return;
+  state.admin=!error&&data===true;
+  if(!state.admin){state.adminEntries=[];state.adminLoaded=false;if(state.tab==='Admin')state.tab='Berg';}
+}
+function adminPage() {
+  if(!state.admin)return '';
+  return `<section class="card"><h2>Einträge verwalten</h2><div class="switcher">${[['photo','Fotos'],['visit','Après-Ski'],['tour','Skitouren']].map(([kind,label])=>`<button data-admin-kind="${kind}" class="${state.adminKind===kind?'selected':''}" ${state.busy?'disabled':''}>${label}</button>`).join('')}</div>${!state.adminLoaded?'<p>Einträge laden …</p>':state.adminEntries.map(entry=>`<article class="admin-entry">${entry.url?photoButton(entry.url,state.adminKind==='visit'?'Après-Ski-Beweisfoto':entry.caption||'Bergfoto'):''}<strong>${escape(entry.profiles?.display_name||'Mitglied')}</strong><p>${date(entry.created_at||entry.started_at)}${state.adminKind==='tour'?' · '+Number(entry.km).toFixed(2)+' km':entry.caption?' · '+escape(entry.caption):''}</p><button class="delete-button" data-admin-delete="${escape(entry.id)}" ${state.busy?'disabled':''}>Eintrag löschen</button></article>`).join('')||'<p>Keine Einträge</p>'}<div class="row">${btn('admin-prev','Zurück',state.busy||state.adminPage===0,'outline')}${btn('admin-next','Weiter',state.busy||!state.adminMore,'outline')}</div></section>`;
+}
+async function loadAdminEntries() {
+  if(!state.admin||!state.session)return;
+  const currentUser=state.session.user.id,kind=state.adminKind,page=state.adminPage;
+  const definition=deletionDefinition(kind);
+  const {data,error}=await db.from(definition.table).select('*, profiles(display_name)').order(kind==='tour'?'started_at':'created_at',{ascending:false}).range(page*25,page*25+25);
+  if(error)throw error;
+  const entries=await Promise.all(data.slice(0,25).map(async entry=>({...entry,url:definition.bucket?await signed(definition.bucket,entry[definition.imageField]):null})));
+  if(state.session?.user.id!==currentUser||!state.admin||state.adminKind!==kind||state.adminPage!==page)return;
+  state.adminEntries=entries;state.adminMore=data.length>25;state.adminLoaded=true;
+}
+async function changeAdminList(kind,page=0) {
+  if(blocked()||!state.admin)return;
+  state.adminKind=kind;state.adminPage=page;state.adminEntries=[];state.adminLoaded=false;
+  await run(()=>loadAdminEntries());
+}
+async function deleteAdminEntry(id) {
+  if(blocked()||!state.admin)return;
+  const definition=deletionDefinition(state.adminKind),entry=state.adminEntries.find(e=>e.id===id);
+  if(!entry||!window.confirm(`${definition.label} von „${entry.profiles?.display_name||'Mitglied'}“ endgültig löschen?`))return;
+  await run(async()=>{
+    // The UI flag never grants rights: Supabase RLS checks the admin role on every request.
+    const image=await deleteOwnEntry(db,state.adminKind,entry,state.session.user.id,true);
+    let cleanupFailed=false;
+    if(image)try{savePendingImages([...pendingImages(),image]);await cleanImages()}catch{cleanupFailed=true}
+    await load();
+    state.message='Eintrag gelöscht.';
+    if(cleanupFailed)state.error='Eintrag gelöscht. Bitte Bilddateien erneut löschen.';
+  });
+}
 function render() {
   closePhotoViewer();
-  const titles={Berg:'Der Berg ruft.',Duell:'Deine Crew. Dein Ranking.',Fotos:'Momente im Schnee.',Profil:'Dein Profil.'};
-  root.innerHTML=`<main><header><a class="brand" href="/">◭ SKIDUELL</a><button id="account" class="profile" ${state.busy||state.active||state.draft?'disabled':''}>${state.session?'Abmelden':'Anmelden'}</button></header>${!configured?'<div class="setup">Vorschau · Online-Verbindung noch nicht eingerichtet</div>':''}<h1>${titles[state.tab]}</h1><div id="feedback" role="status" aria-live="polite">${state.error?`<p class="error">${escape(state.error)}</p>`:state.message?`<p class="success">${escape(state.message)}</p>`:''}</div>${state.session&&pendingImages().length?btn('retry-images','Bilddateien erneut löschen',state.busy,'outline'):''}${state.auth?authPanel():''}${state.session?btn('refresh',state.loaded?'↻ Aktualisieren':'Daten erneut laden',state.busy,'text-button'):''}${!state.session&&configured&&!state.auth?btn('join','Anmelden & mitmachen'):''}${state.tab==='Berg'?mountain():state.tab==='Duell'?rankings():state.tab==='Profil'?profilePage():photos()}</main><nav aria-label="Hauptnavigation">${[['Berg','◭'],['Duell','⚑'],['Fotos','▧'],['Profil','◉']].map(([t,icon])=>`<button data-tab="${t}" class="${state.tab===t?'active':''}" aria-current="${state.tab===t?'page':'false'}"><span>${icon}</span>${t}</button>`).join('')}</nav>`;
+  const titles={Berg:'Der Berg ruft.',Duell:'Deine Crew. Dein Ranking.',Fotos:'Momente im Schnee.',Profil:'Dein Profil.',Admin:'Administration.'};
+  root.innerHTML=`<main><header><a class="brand" href="/">◭ SKIDUELL</a><button id="account" class="profile" ${state.busy||state.active||state.draft?'disabled':''}>${state.session?'Abmelden':'Anmelden'}</button></header>${!configured?'<div class="setup">Vorschau · Online-Verbindung noch nicht eingerichtet</div>':''}<h1>${titles[state.tab]}</h1><div id="feedback" role="status" aria-live="polite">${state.error?`<p class="error">${escape(state.error)}</p>`:state.message?`<p class="success">${escape(state.message)}</p>`:''}</div>${state.session&&pendingImages().length?btn('retry-images','Bilddateien erneut löschen',state.busy,'outline'):''}${state.auth?authPanel():''}${state.session?btn('refresh',state.loaded?'↻ Aktualisieren':'Daten erneut laden',state.busy,'text-button'):''}${!state.session&&configured&&!state.auth?btn('join','Anmelden & mitmachen'):''}${state.tab==='Berg'?mountain():state.tab==='Duell'?rankings():state.tab==='Profil'?profilePage():state.tab==='Admin'?adminPage():photos()}</main><nav aria-label="Hauptnavigation">${[['Berg','◭'],['Duell','⚑'],['Fotos','▧'],['Profil','◉'],...(state.admin?[['Admin','⚙']]:[])].map(([t,icon])=>`<button data-tab="${t}" class="${state.tab===t?'active':''}" aria-current="${state.tab===t?'page':'false'}"><span>${icon}</span>${t}</button>`).join('')}</nav>`;
   bindPhotoViewer(root);
   bindProfileEditor();
+  document.querySelectorAll('[data-admin-kind]').forEach(button=>button.onclick=()=>changeAdminList(button.dataset.adminKind));
+  document.querySelectorAll('[data-admin-delete]').forEach(button=>button.onclick=()=>deleteAdminEntry(button.dataset.adminDelete));
+  on('admin-prev',()=>changeAdminList(state.adminKind,Math.max(0,state.adminPage-1)));on('admin-next',()=>changeAdminList(state.adminKind,state.adminPage+1));
   document.querySelectorAll('[data-member]').forEach(button=>button.onclick=()=>openMember(button.dataset.member));
-  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{if(state.busy)return;resetProfileEditor();state.viewedProfile=null;state.profileError='';state.tab=b.dataset.tab;render();window.scrollTo(0,0)});
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{if(state.busy)return;resetProfileEditor();state.viewedProfile=null;state.profileError='';state.tab=b.dataset.tab;render();window.scrollTo(0,0);if(state.tab==='Admin')run(()=>loadAdminEntries())});
   document.querySelectorAll('[data-delete-kind]').forEach(button=>button.onclick=()=>deleteEntry(button.dataset.deleteKind,button.dataset.deleteId));
   on('retry-images',()=>run(async()=>{await cleanImages();state.message='Bilddateien gelöscht.'}));
   on('account',async()=>{if(state.session) await run(async()=>{const {error}=await db.auth.signOut();if(error)throw error;}); else {state.auth=!state.auth;render()}});
@@ -179,7 +223,7 @@ function savePendingImages(images) {
 }
 async function cleanImages() {
   for (const image of pendingImages()) {
-    await removeImage(db,image,state.session.user.id);
+    await removeImage(db,image,state.session.user.id,state.admin);
     savePendingImages(pendingImages().filter(i=>i.path!==image.path||i.bucket!==image.bucket));
   }
 }
@@ -208,12 +252,12 @@ async function authenticate(signup){
 async function load(){
   if(!state.session)return;const current=++epoch,userId=state.session.user.id;
   try{
-    const responses=await Promise.all([db.from('profiles').select('*').eq('id',userId).single(),db.from('tours').select('*').order('started_at',{ascending:false}),db.from('apres_visits').select('*').order('created_at',{ascending:false}),db.from('posts').select('*, profiles(display_name)').order('created_at',{ascending:false}).limit(50),db.rpc('leaderboard')]);
+    const responses=await Promise.all([db.from('profiles').select('*').eq('id',userId).single(),db.from('tours').select('*').eq('user_id',userId).order('started_at',{ascending:false}),db.from('apres_visits').select('*').eq('user_id',userId).order('created_at',{ascending:false}),db.from('posts').select('*, profiles(display_name)').order('created_at',{ascending:false}).limit(50),db.rpc('leaderboard')]);
     for(const r of responses)if(r.error)throw r.error;
     const [rawProfile,tours,visits,feed,leaders]=responses.map(r=>r.data);
     const profile=await profileImages(rawProfile);
     const urls=await Promise.all([Promise.all(visits.map(async v=>({...v,url:await signed('apres-proofs',v.proof_path)}))),Promise.all(feed.map(async p=>({...p,display_name:p.profiles?.display_name||'Mitglied',url:await signed('community-photos',p.image_path)})))]);
-    if(current!==epoch)return;await Promise.all([loadBeer(),loadMix()]);if(current!==epoch)return;Object.assign(state,{profile,tours,visits:urls[0],feed:urls[1],leaders,loaded:true});
+    if(current!==epoch)return;await Promise.all([loadBeer(),loadMix(),loadAdminStatus()]);if(current!==epoch)return;Object.assign(state,{profile,tours,visits:urls[0],feed:urls[1],leaders,loaded:true});if(state.tab==='Admin'&&state.admin)await loadAdminEntries();
   }catch(e){if(current===epoch){state.error='Daten konnten nicht geladen werden: '+e.message;state.loaded=false;}}
   if(current===epoch)render();
 }
@@ -239,5 +283,5 @@ async function stop(){if(blocked())return;clearWatch();state.active=false;state.
 async function persistTour(){if(blocked()||!state.draft)return;await run(async()=>{const {error}=await db.from('tours').upsert(state.draft,{onConflict:'id'});if(error)throw error;state.draft=null;state.message='Tour gespeichert.';await load()})}
 document.addEventListener('visibilitychange',()=>{previous=null;if(document.hidden&&state.active)state.message='Browser-Aufzeichnung kann bei gesperrtem Bildschirm aussetzen.';else if(state.active)render()});
 window.addEventListener('beforeunload',event=>{if(state.active||state.draft){event.preventDefault();event.returnValue=''}});
-if(db){db.auth.onAuthStateChange((_event,session)=>{epoch++;const changed=state.session?.user.id!==session?.user.id;state.session=session;if(changed){clearWatch();state.active=false;state.draft=null;resetProof();resetProfileEditor();Object.assign(state,{tours:[],visits:[],feed:[],leaders:[],beerLeaders:[],beerReady:false,beerError:'',mixLeaders:[],mixReady:false,mixError:'',profile:null,viewedProfile:null,profileError:'',loaded:false});}if(session){state.auth=false;queueMicrotask(()=>load())}render()});setInterval(()=>{if(state.session&&!state.busy&&!state.active)load()},45*60*1000);}
+if(db){db.auth.onAuthStateChange((_event,session)=>{epoch++;const changed=state.session?.user.id!==session?.user.id;state.session=session;if(changed){clearWatch();state.active=false;state.draft=null;resetProof();resetProfileEditor();Object.assign(state,{tours:[],visits:[],feed:[],leaders:[],beerLeaders:[],beerReady:false,beerError:'',mixLeaders:[],mixReady:false,mixError:'',profile:null,viewedProfile:null,profileError:'',admin:false,adminEntries:[],adminPage:0,adminMore:false,adminLoaded:false,loaded:false});}if(session){state.auth=false;queueMicrotask(()=>load())}render()});setInterval(()=>{if(state.session&&!state.busy&&!state.active)load()},45*60*1000);}
 render();

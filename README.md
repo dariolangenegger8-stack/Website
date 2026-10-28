@@ -85,3 +85,17 @@ Fotos im Feed sowie Après-Ski-Beweisfotos (auch vor dem Speichern) öffnen per 
 ## Persönliche Profile
 
 Für Profilbeschreibung, Profilbild und Banner ausschließlich `supabase/migrations/202610280004_profiles.sql` im Supabase-SQL-Editor ausführen. Die Migration erweitert bestehende Profile; vorhandene Konten, Touren und Tabellen bleiben erhalten. Unter „Profil“ kann jeder den eigenen Anzeigenamen (2–32 Zeichen), die Beschreibung (bis 500 Zeichen) und Bilder bearbeiten, Vorschauen sehen, abbrechen oder speichern. Profilbilder und Banner können entfernt werden; ersetzte Bilddateien werden bereinigt. Andere Mitglieder öffnen Profile über die Namen in Ranglisten oder im Fotofeed und können diese nur ansehen. Profile und verknüpfte Bilder sind nur für angemeldete Mitglieder lesbar. Der private Bucket `profile-media` erlaubt eigene Uploads; referenzierte Bilder sind vor Löschung geschützt. Keine Administrator-Schlüssel im Browser. Ohne Migration bleibt die Profilbearbeitung deaktiviert, die bisherigen Funktionen bleiben verfügbar.
+
+## Administration
+
+Zuerst `supabase/migrations/202610280005_admin.sql` einmal im Supabase-SQL-Editor ausführen. Admin-Rechte werden separat und ausschließlich im SQL-Editor/mit Datenbank-Administratorrechten vergeben:
+
+```sql
+insert into public.app_admins(user_id)
+select id from auth.users where lower(email)=lower('DEINE_KONTO_EMAIL')
+on conflict(user_id) do nothing;
+```
+
+Die E-Mail muss zu einem bereits vorhandenen SkiDuell-Konto gehören. Keine privaten E-Mail-Adressen sind im Website-Code oder in der Migration hinterlegt. Nach Aktualisieren/erneutem Anmelden erscheint „Admin“. Der Bereich zeigt Fotos, Après-Ski-Einträge und Skitouren aller Mitglieder, jeweils 25 pro Seite. Löschen erfordert eine Bestätigung und entfernt Datensatz sowie Bilddatei; fehlgeschlagene Bildbereinigung kann erneut versucht werden. Eigene Saisonwerte bleiben auf das eigene Konto begrenzt.
+
+Admin-Rollen sind in `app_admins` gespeichert, ohne direkte Lese-/Schreibrechte für Nutzer. `is_admin()` und RLS prüfen sie serverseitig. Ein Browser-Flag oder Anzeigename verleiht keine Rechte. Admins können zur Moderation private Après-Ski-Beweisfotos ansehen, aber keine fremden Profile bearbeiten oder Admin-Rollen vergeben. Die Migration entfernt keine Daten. Rollenentzug erfolgt im SQL-Editor über `delete from public.app_admins where user_id = ...`; API-Zugriffe werden sofort blockiert, die Oberfläche aktualisiert sich beim nächsten Laden. Bier-/Mischen-Zähler und Account-Löschung gehören nicht zu diesem Admin-Bereich.
