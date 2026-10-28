@@ -17,6 +17,7 @@ try{
  grant select,insert,delete on storage.objects to authenticated;
  `);
  await db.exec(await readFile(new URL('../supabase/migrations/202610280001_skiduell.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/202610280002_beer.sql',import.meta.url),'utf8'));
  await db.query(`insert into auth.users values($1,'{"display_name":"Alice"}'),($2,'{"display_name":"Bob"}')`,[alice,bob]);
  const profiles=await db.query('select count(*)::int n from public.profiles');assert.equal(profiles.rows[0].n,2);
  await db.exec(`set role authenticated; set request.jwt.claim.sub='${alice}';`);
@@ -29,7 +30,15 @@ try{
  const post='55555555-5555-4555-8555-555555555555';
  await db.query(`insert into storage.objects(bucket_id,name) values('community-photos',$1)`,[`${alice}/${post}.jpg`]);
  await db.query(`insert into public.posts(id,user_id,image_path,caption) values($1,$2,$3,'Schnee')`,[post,alice,`${alice}/${post}.jpg`]);
+ assert.equal((await db.query('select public.adjust_beer(1) n')).rows[0].n,1);
+ assert.equal((await db.query('select public.adjust_beer(1) n')).rows[0].n,2);
+ assert.equal((await db.query('select public.adjust_beer(-1) n')).rows[0].n,1);
+ await assert.rejects(()=>db.query('select public.adjust_beer(5)'));
  await db.exec(`set request.jwt.claim.sub='${bob}'`);
+ assert.equal((await db.query('select * from public.beer_counts')).rows.length,0);
+ assert.equal((await db.query('select * from public.beer_leaderboard()')).rows.find(p=>p.user_id===alice).beers,1);
+ assert.equal((await db.query('select public.adjust_beer(-1) n')).rows[0].n,0);
+ assert.equal((await db.query(`update public.beer_counts set count=999 where user_id=$1 returning user_id`,[alice])).rows.length,0);
  assert.equal((await db.query('select * from public.posts')).rows.length,1);
  assert.equal((await db.query("select * from storage.objects where bucket_id='community-photos'")).rows.length,1);
  assert.equal((await db.query('select * from public.tours')).rows.length,0);
@@ -42,5 +51,8 @@ try{
  await db.exec(`set role anon; set request.jwt.claim.sub=''`);
  await assert.rejects(()=>db.query('select * from public.tours'));
  await assert.rejects(()=>db.query('select * from public.leaderboard()'));
+ await assert.rejects(()=>db.query('select * from public.beer_leaderboard()'));
+ await assert.rejects(()=>db.query('select public.adjust_beer(1)'));
+ console.log('PASS: beer increment, correction, zero floor, delta validation, cross-user isolation, shared totals, anonymous denial');
  console.log('PASS: migration, signup profiles, own tour insert, cross-user write denial, mandatory uploaded proof, private tours/proofs, aggregate ranking, anonymous denial');
 }finally{await db.close()}

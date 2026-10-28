@@ -7,7 +7,7 @@ const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const configured = Boolean(url && key && /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/.test(url));
 const db = configured ? createClient(url, key) : null;
 const root = document.querySelector('#app');
-const state = { tab: 'Berg', ranking: 'ski', session: null, profile: null, tours: [], visits: [], feed: [], leaders: [], busy: false, auth: false, loaded: false, error: '', message: '', proof: null, proofUrl: null, active: false, draft: null };
+const state = { tab: 'Berg', ranking: 'ski', session: null, profile: null, tours: [], visits: [], feed: [], leaders: [], beerLeaders: [], beerReady: false, beerError: '', busy: false, auth: false, loaded: false, error: '', message: '', proof: null, proofUrl: null, active: false, draft: null };
 let watcher = null, previous = null, started = 0, timer = null, epoch = 0;
 let metrics = { km: 0, ascent: 0, maxSpeed: null, seconds: 0 };
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -26,9 +26,27 @@ function mountain() {
   return `<section class="hero"><span class="mountain" aria-hidden="true">◭</span><div class="eyebrow">DEINE AKTUELLE TOUR</div><div class="big"><span id="live-km">${metrics.km.toFixed(2)}</span> <small>km</small></div><div class="row"><span id="live-time">${time()}</span><span id="live-alt">↗ ${Math.round(metrics.ascent)} m</span><span id="live-speed">${metrics.maxSpeed === null ? '–' : fmt(metrics.maxSpeed)} km/h max.</span></div>${btn('track',state.active?'■ Tour beenden & speichern':state.draft?'Tour erneut speichern':'● Tour starten',blocked())}<p class="note">Browser geöffnet lassen. GPS zählt auch Liftfahrten.</p></section><h2>Deine Saison</h2><div class="row"><div class="stat"><b>${days}</b>Skitage</div><div class="stat"><b>${fmt(total)}</b>Kilometer</div><div class="stat"><b>${state.tours.length}</b>Touren</div></div><h2>Letzte Touren</h2>${state.tours.length?state.tours.map(t=>`<article class="card"><strong>${date(t.started_at)} · ${Number(t.km).toFixed(2)} km</strong><p>${Math.round(t.seconds/60)} Min. · ${t.max_speed===null?'–':fmt(t.max_speed)} km/h max.</p></article>`).join(''):'<p>Noch keine Touren.</p>'}`;
 }
 function rankings() {
+  if (state.ranking === 'beer') return beerRanking();
   const apres = state.ranking === 'apres';
   const entries = [...state.leaders].sort((a,b)=>apres ? b.apres_visits-a.apres_visits : b.km-a.km || (b.max_speed??0)-(a.max_speed??0));
-  return `<section class="ranking">${pattern(apres?'🍾':'🎿')}<div class="switcher"><button id="ski-tab" aria-pressed="${!apres}" class="${!apres?'selected':''}">🎿 Ski-Rangliste</button><button id="apres-tab" aria-pressed="${apres}" class="${apres?'selected':''}">🍾 Après-Ski</button></div><div class="card"><h2>${apres?'🍾 Après-Ski':'Deine Bestleistungen'}</h2><table><thead><tr><th>RANG / NAME</th><th>${apres?'BESUCHE 🍾':'KM GESAMT'}</th>${apres?'':'<th>MAX. KM/H</th>'}</tr></thead><tbody>${entries.map((e,i)=>`<tr><td>${String(i+1).padStart(2,'0')} &nbsp; ${escape(e.display_name)}${e.user_id===state.session?.user.id?' · Du':''}</td><td>${apres?e.apres_visits:fmt(e.km)}</td>${apres?'':`<td>${e.max_speed===null?'–':fmt(e.max_speed)}</td>`}</tr>`).join('')||`<tr><td colspan="${apres?2:3}">Noch keine Einträge</td></tr>`}</tbody></table></div>${apres?`<div class="card"><strong>🍾 Ich war beim Après-Ski</strong>${state.proofUrl?`<img class="photo" alt="Ausgewähltes Beweisfoto" src="${escape(state.proofUrl)}">`:''}<label class="button outline file-button">${state.proof?'Beweisfoto wechseln':'+ Beweisfoto hinzufügen'}<input id="proof" type="file" accept="image/jpeg,image/png,image/webp" ${blocked()?'disabled':''}></label>${btn('visit','🍾 Besuch speichern',blocked()||!state.proof)}${state.proof?btn('cancel-proof','Abbrechen',state.busy,'text-button'):''}</div><h2>Deine Après-Momente</h2>${state.visits.map(v=>`<article class="card"><img class="photo" src="${escape(v.url)}" alt="Après-Ski-Beweisfoto"><strong>🍾 ${date(v.created_at)}</strong></article>`).join('')||'<p>Noch keine Besuche</p>'}`:''}</section>`;
+  return `<section class="ranking">${pattern(apres?'🍾':'🎿')}<div class="switcher"><button id="ski-tab" aria-pressed="${!apres}" class="${!apres?'selected':''}">🎿 Ski-Rangliste</button><button id="apres-tab" aria-pressed="${apres}" class="${apres?'selected':''}">🍾 Après-Ski</button><button id="beer-tab" aria-pressed="false">🍺 Bier</button></div><div class="card"><h2>${apres?'🍾 Après-Ski':'Deine Bestleistungen'}</h2><table><thead><tr><th>RANG / NAME</th><th>${apres?'BESUCHE 🍾':'KM GESAMT'}</th>${apres?'':'<th>MAX. KM/H</th>'}</tr></thead><tbody>${entries.map((e,i)=>`<tr><td>${String(i+1).padStart(2,'0')} &nbsp; ${escape(e.display_name)}${e.user_id===state.session?.user.id?' · Du':''}</td><td>${apres?e.apres_visits:fmt(e.km)}</td>${apres?'':`<td>${e.max_speed===null?'–':fmt(e.max_speed)}</td>`}</tr>`).join('')||`<tr><td colspan="${apres?2:3}">Noch keine Einträge</td></tr>`}</tbody></table></div>${apres?`<div class="card"><strong>🍾 Ich war beim Après-Ski</strong>${state.proofUrl?`<img class="photo" alt="Ausgewähltes Beweisfoto" src="${escape(state.proofUrl)}">`:''}<label class="button outline file-button">${state.proof?'Beweisfoto wechseln':'+ Beweisfoto hinzufügen'}<input id="proof" type="file" accept="image/jpeg,image/png,image/webp" ${blocked()?'disabled':''}></label>${btn('visit','🍾 Besuch speichern',blocked()||!state.proof)}${state.proof?btn('cancel-proof','Abbrechen',state.busy,'text-button'):''}</div><h2>Deine Après-Momente</h2>${state.visits.map(v=>`<article class="card"><img class="photo" src="${escape(v.url)}" alt="Après-Ski-Beweisfoto"><strong>🍾 ${date(v.created_at)}</strong></article>`).join('')||'<p>Noch keine Besuche</p>'}`:''}</section>`;
+}
+function beerRanking() {
+  const own = state.beerLeaders.find(e => e.user_id === state.session?.user.id)?.beers ?? 0;
+  return `<section class="ranking">${pattern('🍺')}<div class="switcher"><button id="ski-tab" aria-pressed="false">🎿 Ski-Rangliste</button><button id="apres-tab" aria-pressed="false">🍾 Après-Ski</button><button id="beer-tab" class="selected" aria-pressed="true">🍺 Bier</button></div><div class="card"><h2>🍺 Bier-Rangliste</h2>${state.beerError ? `<p class="error">${escape(state.beerError)}</p>` : ''}<table><thead><tr><th>RANG / NAME</th><th>BIER GESAMT</th></tr></thead><tbody>${state.beerLeaders.map((e,i)=>`<tr><td>${String(i+1).padStart(2,'0')} &nbsp; ${escape(e.display_name)}${e.user_id===state.session?.user.id?' · Du':''}</td><td>${e.beers}</td></tr>`).join('') || '<tr><td colspan="2">Noch keine Einträge</td></tr>'}</tbody></table></div><div class="card"><h2>Dein Eintrag</h2><div class="beer-count">${own} <span aria-hidden="true">🍺</span></div><div class="row">${btn('beer-minus','− 1 korrigieren',blocked()||!state.beerReady||own===0,'outline')}${btn('beer-plus','+ 1 eintragen',blocked()||!state.beerReady)}</div></div></section>`;
+}
+async function loadBeer() {
+  if (!state.session) return;
+  const userId = state.session.user.id;
+  const {data,error} = await db.rpc('beer_leaderboard');
+  if (state.session?.user.id !== userId) return;
+  state.beerReady = !error;
+  state.beerError = error ? (error.code === 'PGRST202' || error.code === '42883' ? 'Die Bier-Tabelle muss noch in Supabase eingerichtet werden.' : 'Bier-Rangliste konnte nicht geladen werden. Bitte erneut aktualisieren.') : '';
+  state.beerLeaders = error ? [] : data;
+}
+async function adjustBeer(delta) {
+  if (blocked() || !state.beerReady) return;
+  await run(async()=>{const {error}=await db.rpc('adjust_beer',{delta});if(error)throw error;await loadBeer();});
 }
 function photos() {
   return `<section class="card"><h2>Für deine Crew.</h2><form id="photo-form"><label>Dein Moment<input name="caption" maxlength="180" placeholder="Was war dein Highlight?"></label><label>Foto für alle Mitglieder<input name="photo" type="file" accept="image/jpeg,image/png,image/webp" required ${blocked()?'disabled':''}></label>${btn('post','Foto teilen',blocked())}</form></section>${state.feed.map(p=>`<article class="card"><img class="photo" src="${escape(p.url)}" alt="${escape(p.caption||'Bergfoto')}"><strong>${escape(p.caption||'Ein Moment am Berg')}</strong><p>${escape(p.display_name)} · ${date(p.created_at)}</p></article>`).join('')||'<p>Noch keine geteilten Fotos.</p>'}`;
@@ -41,6 +59,7 @@ function render() {
   on('refresh',()=>run(()=>load()));
   on('join',()=>{state.auth=true;render()});on('close-auth',()=>{state.auth=false;render()});
   const form=document.querySelector('#login-form');if(form){form.onsubmit=e=>{e.preventDefault();authenticate(false)};on('signup',e=>{e.preventDefault();if(form.reportValidity())authenticate(true)});}
+  on('beer-tab',()=>{state.ranking='beer';render()});on('beer-plus',()=>adjustBeer(1));on('beer-minus',()=>adjustBeer(-1));
   on('ski-tab',()=>{state.ranking='ski';render()});on('apres-tab',()=>{state.ranking='apres';render()});
   on('track',()=>state.active?stop():state.draft?persistTour():start());on('cancel-proof',()=>{resetProof();render()});
   const proof=document.querySelector('#proof');if(proof)proof.onchange=()=>{const f=proof.files[0];if(f){resetProof();state.proof=f;state.proofUrl=URL.createObjectURL(f);render()}};
@@ -62,7 +81,7 @@ async function load(){
     for(const r of responses)if(r.error)throw r.error;
     const [profile,tours,visits,feed,leaders]=responses.map(r=>r.data);
     const urls=await Promise.all([Promise.all(visits.map(async v=>({...v,url:await signed('apres-proofs',v.proof_path)}))),Promise.all(feed.map(async p=>({...p,display_name:p.profiles?.display_name||'Mitglied',url:await signed('community-photos',p.image_path)})))]);
-    if(current!==epoch)return;Object.assign(state,{profile,tours,visits:urls[0],feed:urls[1],leaders,loaded:true});
+    if(current!==epoch)return;await loadBeer();if(current!==epoch)return;Object.assign(state,{profile,tours,visits:urls[0],feed:urls[1],leaders,loaded:true});
   }catch(e){if(current===epoch){state.error='Daten konnten nicht geladen werden: '+e.message;state.loaded=false;}}
   if(current===epoch)render();
 }
@@ -88,5 +107,5 @@ async function stop(){if(blocked())return;clearWatch();state.active=false;state.
 async function persistTour(){if(blocked()||!state.draft)return;await run(async()=>{const {error}=await db.from('tours').upsert(state.draft,{onConflict:'id'});if(error)throw error;state.draft=null;state.message='Tour gespeichert.';await load()})}
 document.addEventListener('visibilitychange',()=>{previous=null;if(document.hidden&&state.active)state.message='Browser-Aufzeichnung kann bei gesperrtem Bildschirm aussetzen.';else if(state.active)render()});
 window.addEventListener('beforeunload',event=>{if(state.active||state.draft){event.preventDefault();event.returnValue=''}});
-if(db){db.auth.onAuthStateChange((_event,session)=>{epoch++;const changed=state.session?.user.id!==session?.user.id;state.session=session;if(changed){clearWatch();state.active=false;state.draft=null;resetProof();Object.assign(state,{tours:[],visits:[],feed:[],leaders:[],profile:null,loaded:false});}if(session){state.auth=false;queueMicrotask(()=>load())}render()});setInterval(()=>{if(state.session&&!state.busy&&!state.active)load()},45*60*1000);}
+if(db){db.auth.onAuthStateChange((_event,session)=>{epoch++;const changed=state.session?.user.id!==session?.user.id;state.session=session;if(changed){clearWatch();state.active=false;state.draft=null;resetProof();Object.assign(state,{tours:[],visits:[],feed:[],leaders:[],beerLeaders:[],beerReady:false,beerError:'',profile:null,loaded:false});}if(session){state.auth=false;queueMicrotask(()=>load())}render()});setInterval(()=>{if(state.session&&!state.busy&&!state.active)load()},45*60*1000);}
 render();

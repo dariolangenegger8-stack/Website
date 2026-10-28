@@ -65,3 +65,7 @@ Vor Freigabe auf dem tatsächlichen Supabase-Projekt mit zwei Konten prüfen: An
 Die Expo-App bleibt im Repository erhalten (`App.tsx`, `app.json`). Start: `npm start`. Details: [Handy-Dokumentation](docs/MOBILE.md). `npm run dev` / `npm run web` starten jetzt die Website.
 
 Der Browser-Smoke-Test startet selbst einen lokalen Vite-Server auf Port 5189. Er simuliert Supabase-HTTP-Antworten (keine echten Konten) und prüft Anmeldung, GPS, Tourenspeicherung, Rangliste, Foto-Pflicht/Abbruch, Check-ins, Foto-Feed und Abmelden. Ein vorhandenes Chromium lässt sich mit `PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH` auswählen.
+
+## 🍺 Bier-Rangliste (neue Migration)
+
+Nach der bestehenden Grundeinrichtung ausschließlich `supabase/migrations/202610280002_beer.sql` im Supabase-SQL-Editor ausführen. Die erste Migration nicht erneut ausführen. Diese additive Migration erhält vorhandene Touren, Bilder und Konten. Sie ergänzt einen eigenen Zähler pro Nutzer und eine Rangliste für Mitglieder. `+ 1 eintragen` erhöht atomar; `− 1 korrigieren` korrigiert bis mindestens null. Nur eigene Zähler können geändert werden. Bieranzahl wird selbst eingetragen, ohne Beweisfoto. Solange die Migration fehlt, zeigt nur der Bier-Bereich eine Einrichtungsmeldung; Ski, Après-Ski und Fotos funktionieren weiter. Kein Administratorzugriff auf Supabase ist hier verbunden, deshalb ist die Online-Migration noch manuell auszuführen.
