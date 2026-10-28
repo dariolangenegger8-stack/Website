@@ -22,6 +22,7 @@ try{
  await db.exec(await readFile(new URL('../supabase/migrations/202610280004_profiles.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/202610280005_admin.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/202610280006_admin_counters.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/202610280007_admin_reduce.sql',import.meta.url),'utf8'));
  await db.query(`insert into auth.users values($1,'{"display_name":"Alice"}'),($2,'{"display_name":"Bob"}')`,[alice,bob]);
  const profiles=await db.query('select count(*)::int n from public.profiles');assert.equal(profiles.rows[0].n,2);
  await db.exec(`set role authenticated; set request.jwt.claim.sub='${alice}';`);
@@ -97,6 +98,7 @@ try{
  await db.exec(`set role authenticated; set request.jwt.claim.sub='${bob}'`);
  assert.equal((await db.query('select public.is_admin() value')).rows[0].value,false);
  await assert.rejects(()=>db.query(`insert into public.app_admins(user_id) values($1)`,[bob]));
+ await assert.rejects(()=>db.query(`select public.admin_reduce_counter('beer',$1,1)`,[alice]));
  const adminTour='66666666-6666-4666-8666-666666666666',adminVisit='77777777-7777-4777-8777-777777777777',adminPost='88888888-8888-4888-8888-888888888888';
  await db.query(`insert into public.tours(id,user_id,km,max_speed,seconds) values($1,$2,10,40,100)`,[adminTour,bob]);
  await db.query(`insert into storage.objects(bucket_id,name) values('apres-proofs',$1),('community-photos',$2)`,[bob+'/'+adminVisit+'.jpg',bob+'/'+adminPost+'.jpg']);
@@ -112,6 +114,19 @@ try{
  assert.equal((await db.query('select * from public.beer_leaderboard()')).rows.find(p=>p.user_id===bob).beers,0);
  assert.equal((await db.query('select * from public.mix_leaderboard()')).rows.find(p=>p.user_id===bob).mixes,0);
  console.log('PASS: admin resets other-user beer and mix totals; normal users cannot reset others');
+ await db.exec(`set request.jwt.claim.sub='${bob}'`);
+ for(let i=0;i<5;i++){await db.query('select public.adjust_beer(1)');await db.query('select public.adjust_mix(1)');}
+ await db.exec(`set request.jwt.claim.sub='${alice}'`);
+ for(const kind of ['beer','mix']){
+  assert.equal((await db.query('select public.admin_reduce_counter($1,$2,1) n',[kind,bob])).rows[0].n,4);
+  assert.equal((await db.query('select public.admin_reduce_counter($1,$2,2) n',[kind,bob])).rows[0].n,2);
+  assert.equal((await db.query('select public.admin_reduce_counter($1,$2,100) n',[kind,bob])).rows[0].n,0);
+  for(const amount of [0,-1,null])await assert.rejects(()=>db.query('select public.admin_reduce_counter($1,$2,$3)',[kind,bob,amount]));
+ }
+ await assert.rejects(()=>db.query(`select public.admin_reduce_counter('wrong',$1,1)`,[bob]));
+ assert.equal((await db.query('select count from public.beer_counts where user_id=$1',[alice])).rows[0].count,1);
+ console.log('PASS: admin subtracts 1 or multiple, clamps at zero, validates amounts/kind, keeps other accounts unchanged');
+
  await assert.rejects(()=>db.query(`insert into public.app_admins(user_id) values($1)`,[bob]));
  assert.equal((await db.query(`select * from public.apres_visits where id=$1`,[adminVisit])).rows.length,1);
  assert.equal((await db.query(`select * from storage.objects where bucket_id='apres-proofs' and name=$1`,[bob+'/'+adminVisit+'.jpg'])).rows.length,1);
@@ -125,6 +140,7 @@ try{
  assert.equal((await db.query('select public.is_admin() value')).rows[0].value,false);
  console.log('PASS: admin grant/revoke, no self-promotion, admin cross-user list/delete/cleanup, no cross-user editing, referenced images protected');
  await db.exec(`set role anon; set request.jwt.claim.sub=''`);
+ await assert.rejects(()=>db.query(`select public.admin_reduce_counter('beer',$1,1)`,[alice]));
  await assert.rejects(()=>db.query('select public.is_admin()'));
  await assert.rejects(()=>db.query('select * from public.app_admins'));
  await assert.rejects(()=>db.query('select * from public.tours'));

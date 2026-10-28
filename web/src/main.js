@@ -154,7 +154,7 @@ async function loadAdminStatus() {
 }
 function adminPage() {
   if(!state.admin)return '';
-  return `<section class="card"><h2>Einträge verwalten</h2><div class="switcher">${[['photo','Fotos'],['visit','Après-Ski'],['tour','Skitouren'],['beer','🍺 Bier'],['mix','🍹 Mischen']].map(([kind,label])=>`<button data-admin-kind="${kind}" class="${state.adminKind===kind?'selected':''}" ${state.busy?'disabled':''}>${label}</button>`).join('')}</div>${!state.adminLoaded?'<p>Einträge laden …</p>':state.adminEntries.map(entry=>`<article class="admin-entry">${entry.url?photoButton(entry.url,state.adminKind==='visit'?'Après-Ski-Beweisfoto':entry.caption||'Bergfoto'):''}<strong>${escape(entry.profiles?.display_name||'Mitglied')}</strong><p>${date(entry.created_at||entry.started_at||entry.updated_at)}${['beer','mix'].includes(state.adminKind)?' · '+entry.count+' gesamt':state.adminKind==='tour'?' · '+Number(entry.km).toFixed(2)+' km':entry.caption?' · '+escape(entry.caption):''}</p><button class="delete-button" data-admin-delete="${escape(entry.id)}" ${state.busy?'disabled':''}>${['beer','mix'].includes(state.adminKind)?'Gesamtzähler auf 0 setzen':'Eintrag löschen'}</button></article>`).join('')||'<p>Keine Einträge</p>'}<div class="row">${btn('admin-prev','Zurück',state.busy||state.adminPage===0,'outline')}${btn('admin-next','Weiter',state.busy||!state.adminMore,'outline')}</div></section>`;
+  return `<section class="card"><h2>Einträge verwalten</h2><div class="switcher">${[['photo','Fotos'],['visit','Après-Ski'],['tour','Skitouren'],['beer','🍺 Bier'],['mix','🍹 Mischen']].map(([kind,label])=>`<button data-admin-kind="${kind}" class="${state.adminKind===kind?'selected':''}" ${state.busy?'disabled':''}>${label}</button>`).join('')}</div>${!state.adminLoaded?'<p>Einträge laden …</p>':state.adminEntries.map(entry=>`<article class="admin-entry">${entry.url?photoButton(entry.url,state.adminKind==='visit'?'Après-Ski-Beweisfoto':entry.caption||'Bergfoto'):''}<strong>${escape(entry.profiles?.display_name||'Mitglied')}</strong><p>${date(entry.created_at||entry.started_at||entry.updated_at)}${['beer','mix'].includes(state.adminKind)?' · '+entry.count+' gesamt':state.adminKind==='tour'?' · '+Number(entry.km).toFixed(2)+' km':entry.caption?' · '+escape(entry.caption):''}</p>${['beer','mix'].includes(state.adminKind)?`<form class="counter-correction" data-admin-counter="${escape(entry.user_id)}"><label>Menge abziehen<input name="amount" type="number" inputmode="numeric" min="1" max="2147483647" step="1" value="1" required ${state.busy||entry.count===0?'disabled':''}></label><button class="delete-button" type="submit" ${state.busy||entry.count===0?'disabled':''}>Menge abziehen</button></form>`:`<button class="delete-button" data-admin-delete="${escape(entry.id)}" ${state.busy?'disabled':''}>Eintrag löschen</button>`}</article>`).join('')||'<p>Keine Einträge</p>'}<div class="row">${btn('admin-prev','Zurück',state.busy||state.adminPage===0,'outline')}${btn('admin-next','Weiter',state.busy||!state.adminMore,'outline')}</div></section>`;
 }
 async function loadAdminEntries() {
   if(!state.admin||!state.session)return;
@@ -174,7 +174,7 @@ async function changeAdminList(kind,page=0) {
 async function deleteAdminEntry(id) {
   if(blocked()||!state.admin)return;
   const definition=deletionDefinition(state.adminKind),entry=state.adminEntries.find(e=>e.id===id);
-  if(!entry||!window.confirm(`${definition.label} von „${entry.profiles?.display_name||'Mitglied'}“ ${definition.idField?'auf 0 zurücksetzen':'endgültig löschen'}?`))return;
+  if(definition.idField||!entry||!window.confirm(`${definition.label} von „${entry.profiles?.display_name||'Mitglied'}“ ${definition.idField?'auf 0 zurücksetzen':'endgültig löschen'}?`))return;
   await run(async()=>{
     // The UI flag never grants rights: Supabase RLS checks the admin role on every request.
     const image=await deleteOwnEntry(db,state.adminKind,entry,state.session.user.id,true);
@@ -185,6 +185,19 @@ async function deleteAdminEntry(id) {
     if(cleanupFailed)state.error='Eintrag gelöscht. Bitte Bilddateien erneut löschen.';
   });
 }
+async function reduceAdminCounter(form) {
+  if(blocked()||!state.admin||!['beer','mix'].includes(state.adminKind))return;
+  const entry=state.adminEntries.find(e=>e.user_id===form.dataset.adminCounter);
+  const amount=Number(new FormData(form).get('amount'));
+  if(!entry||entry.count===0||!Number.isSafeInteger(amount)||amount<1||amount>2147483647)return;
+  const kind=state.adminKind,label=kind==='beer'?'Bier':'Mischen';
+  if(!window.confirm(`${amount} bei ${label} von „${entry.profiles?.display_name||'Mitglied'}“ abziehen?`))return;
+  await run(async()=>{
+    const {data,error}=await db.rpc('admin_reduce_counter',{counter_kind:kind,target_user:entry.user_id,amount});
+    if(error)throw error;
+    await load();state.message=`Zähler korrigiert. Neuer Stand: ${data}.`;
+  });
+}
 function render() {
   closePhotoViewer();
   const titles={Berg:'Der Berg ruft.',Duell:'Deine Crew. Dein Ranking.',Fotos:'Momente im Schnee.',Profil:'Dein Profil.',Admin:'Administration.'};
@@ -192,6 +205,7 @@ function render() {
   bindPhotoViewer(root);
   bindProfileEditor();
   document.querySelectorAll('[data-admin-kind]').forEach(button=>button.onclick=()=>changeAdminList(button.dataset.adminKind));
+  document.querySelectorAll('[data-admin-counter]').forEach(form=>form.onsubmit=event=>{event.preventDefault();if(form.reportValidity())reduceAdminCounter(form)});
   document.querySelectorAll('[data-admin-delete]').forEach(button=>button.onclick=()=>deleteAdminEntry(button.dataset.adminDelete));
   on('admin-prev',()=>changeAdminList(state.adminKind,Math.max(0,state.adminPage-1)));on('admin-next',()=>changeAdminList(state.adminKind,state.adminPage+1));
   document.querySelectorAll('[data-member]').forEach(button=>button.onclick=()=>openMember(button.dataset.member));
