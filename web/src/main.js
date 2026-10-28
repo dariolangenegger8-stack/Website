@@ -9,7 +9,7 @@ const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY;
 const configured = Boolean(url && key && /^https:\/\/[a-z0-9-]+\.supabase\.co\/?$/.test(url));
 const db = configured ? createClient(url, key) : null;
 const root = document.querySelector('#app');
-const state = { tab: 'Berg', ranking: 'ski', session: null, profile: null, tours: [], visits: [], feed: [], leaders: [], beerLeaders: [], beerReady: false, beerError: '', mixLeaders: [], mixReady: false, mixError: '', busy: false, auth: false, loaded: false, error: '', message: '', proof: null, proofUrl: null, active: false, draft: null };
+const state = { tab: 'Berg', ranking: 'ski', session: null, profile: null, viewedProfile: null, profileEditor: null, profileError: '', tours: [], visits: [], feed: [], leaders: [], beerLeaders: [], beerReady: false, beerError: '', mixLeaders: [], mixReady: false, mixError: '', busy: false, auth: false, loaded: false, error: '', message: '', proof: null, proofUrl: null, active: false, draft: null };
 let watcher = null, previous = null, started = 0, timer = null, epoch = 0;
 let metrics = { km: 0, ascent: 0, maxSpeed: null, seconds: 0 };
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -36,7 +36,7 @@ function rankings() {
   if (state.ranking === 'beer' || state.ranking === 'mix') return beerRanking();
   const apres = state.ranking === 'apres';
   const entries = [...state.leaders].sort((a,b)=>apres ? b.apres_visits-a.apres_visits : b.km-a.km || (b.max_speed??0)-(a.max_speed??0));
-  return `<section class="ranking">${pattern(apres?'🍾':'🎿')}${rankingTabs()}<div class="card"><h2>${apres?'🍾 Après-Ski':'Deine Bestleistungen'}</h2><table><thead><tr><th>RANG / NAME</th><th>${apres?'BESUCHE 🍾':'KM GESAMT'}</th>${apres?'':'<th>MAX. KM/H</th>'}</tr></thead><tbody>${entries.map((e,i)=>`<tr><td>${String(i+1).padStart(2,'0')} &nbsp; ${escape(e.display_name)}${e.user_id===state.session?.user.id?' · Du':''}</td><td>${apres?e.apres_visits:fmt(e.km)}</td>${apres?'':`<td>${e.max_speed===null?'–':fmt(e.max_speed)}</td>`}</tr>`).join('')||`<tr><td colspan="${apres?2:3}">Noch keine Einträge</td></tr>`}</tbody></table></div>${apres?`<div class="card"><strong>🍾 Ich war beim Après-Ski</strong>${state.proofUrl?`${photoButton(state.proofUrl,'Ausgewähltes Beweisfoto')}`:''}<label class="button outline file-button">${state.proof?'Beweisfoto wechseln':'+ Beweisfoto hinzufügen'}<input id="proof" type="file" accept="image/jpeg,image/png,image/webp" ${blocked()?'disabled':''}></label>${btn('visit','🍾 Besuch speichern',blocked()||!state.proof)}${state.proof?btn('cancel-proof','Abbrechen',state.busy,'text-button'):''}</div><h2>Deine Après-Momente</h2>${state.visits.map(v=>`<article class="card">${photoButton(v.url,'Après-Ski-Beweisfoto')}<strong>🍾 ${date(v.created_at)}</strong>${deleteButton('visit',v)}</article>`).join('')||'<p>Noch keine Besuche</p>'}`:''}</section>`;
+  return `<section class="ranking">${pattern(apres?'🍾':'🎿')}${rankingTabs()}<div class="card"><h2>${apres?'🍾 Après-Ski':'Deine Bestleistungen'}</h2><table><thead><tr><th>RANG / NAME</th><th>${apres?'BESUCHE 🍾':'KM GESAMT'}</th>${apres?'':'<th>MAX. KM/H</th>'}</tr></thead><tbody>${entries.map((e,i)=>`<tr><td>${String(i+1).padStart(2,'0')} &nbsp; ${memberButton(e.user_id,e.display_name)}${e.user_id===state.session?.user.id?' · Du':''}</td><td>${apres?e.apres_visits:fmt(e.km)}</td>${apres?'':`<td>${e.max_speed===null?'–':fmt(e.max_speed)}</td>`}</tr>`).join('')||`<tr><td colspan="${apres?2:3}">Noch keine Einträge</td></tr>`}</tbody></table></div>${apres?`<div class="card"><strong>🍾 Ich war beim Après-Ski</strong>${state.proofUrl?`${photoButton(state.proofUrl,'Ausgewähltes Beweisfoto')}`:''}<label class="button outline file-button">${state.proof?'Beweisfoto wechseln':'+ Beweisfoto hinzufügen'}<input id="proof" type="file" accept="image/jpeg,image/png,image/webp" ${blocked()?'disabled':''}></label>${btn('visit','🍾 Besuch speichern',blocked()||!state.proof)}${state.proof?btn('cancel-proof','Abbrechen',state.busy,'text-button'):''}</div><h2>Deine Après-Momente</h2>${state.visits.map(v=>`<article class="card">${photoButton(v.url,'Après-Ski-Beweisfoto')}<strong>🍾 ${date(v.created_at)}</strong>${deleteButton('visit',v)}</article>`).join('')||'<p>Noch keine Besuche</p>'}`:''}</section>`;
 }
 function beerRanking() {
   const mix = state.ranking === 'mix';
@@ -46,7 +46,7 @@ function beerRanking() {
   const error = mix ? state.mixError : state.beerError;
   const kind = mix ? 'mix' : 'beer';
   const own = leaders.find(e => e.user_id === state.session?.user.id)?.[mix ? 'mixes' : 'beers'] ?? 0;
-  return `<section class="ranking">${pattern(icon)}${rankingTabs()}<div class="card"><h2>${mix ? '🍹 Mischen' : '🍺 Bier-Rangliste'}</h2>${error ? `<p class="error">${escape(error)}</p>` : ''}<table><thead><tr><th>RANG / NAME</th><th>${mix ? 'MISCHEN GESAMT' : 'BIER GESAMT'}</th></tr></thead><tbody>${leaders.map((e,i)=>`<tr><td>${String(i+1).padStart(2,'0')} &nbsp; ${escape(e.display_name)}${e.user_id===state.session?.user.id?' · Du':''}</td><td>${e[mix ? 'mixes' : 'beers']}</td></tr>`).join('') || '<tr><td colspan="2">Noch keine Einträge</td></tr>'}</tbody></table></div><div class="card"><h2>Dein Eintrag</h2><div class="beer-count">${own} <span aria-hidden="true">${icon}</span></div><div class="row">${btn(kind+'-minus','− 1 korrigieren',blocked()||!ready||own===0,'outline')}${btn(kind+'-plus','+ 1 eintragen',blocked()||!ready)}</div></div></section>`;
+  return `<section class="ranking">${pattern(icon)}${rankingTabs()}<div class="card"><h2>${mix ? '🍹 Mischen' : '🍺 Bier-Rangliste'}</h2>${error ? `<p class="error">${escape(error)}</p>` : ''}<table><thead><tr><th>RANG / NAME</th><th>${mix ? 'MISCHEN GESAMT' : 'BIER GESAMT'}</th></tr></thead><tbody>${leaders.map((e,i)=>`<tr><td>${String(i+1).padStart(2,'0')} &nbsp; ${memberButton(e.user_id,e.display_name)}${e.user_id===state.session?.user.id?' · Du':''}</td><td>${e[mix ? 'mixes' : 'beers']}</td></tr>`).join('') || '<tr><td colspan="2">Noch keine Einträge</td></tr>'}</tbody></table></div><div class="card"><h2>Dein Eintrag</h2><div class="beer-count">${own} <span aria-hidden="true">${icon}</span></div><div class="row">${btn(kind+'-minus','− 1 korrigieren',blocked()||!ready||own===0,'outline')}${btn(kind+'-plus','+ 1 eintragen',blocked()||!ready)}</div></div></section>`;
 }
 async function loadBeer() {
   if (!state.session) return;
@@ -75,14 +75,83 @@ async function adjustMix(delta) {
   await run(async()=>{const {error}=await db.rpc('adjust_mix',{delta});if(error)throw error;await loadMix();});
 }
 function photos() {
-  return `<section class="card"><h2>Für deine Crew.</h2><form id="photo-form"><label>Dein Moment<input name="caption" maxlength="180" placeholder="Was war dein Highlight?"></label><label>Foto für alle Mitglieder<input name="photo" type="file" accept="image/jpeg,image/png,image/webp" required ${blocked()?'disabled':''}></label>${btn('post','Foto teilen',blocked())}</form></section>${state.feed.map(p=>`<article class="card">${photoButton(p.url,p.caption||'Bergfoto')}<strong>${escape(p.caption||'Ein Moment am Berg')}</strong><p>${escape(p.display_name)} · ${date(p.created_at)}</p>${deleteButton('photo',p)}</article>`).join('')||'<p>Noch keine geteilten Fotos.</p>'}`;
+  return `<section class="card"><h2>Für deine Crew.</h2><form id="photo-form"><label>Dein Moment<input name="caption" maxlength="180" placeholder="Was war dein Highlight?"></label><label>Foto für alle Mitglieder<input name="photo" type="file" accept="image/jpeg,image/png,image/webp" required ${blocked()?'disabled':''}></label>${btn('post','Foto teilen',blocked())}</form></section>${state.feed.map(p=>`<article class="card">${photoButton(p.url,p.caption||'Bergfoto')}<strong>${escape(p.caption||'Ein Moment am Berg')}</strong><p>${memberButton(p.user_id,p.display_name)} · ${date(p.created_at)}</p>${deleteButton('photo',p)}</article>`).join('')||'<p>Noch keine geteilten Fotos.</p>'}`;
+}
+function memberButton(id,name) {
+  return `<button class="member-link" data-member="${escape(id)}">${escape(name)}</button>`;
+}
+function resetProfileEditor() {
+  for (const field of ['avatar','banner']) if(state.profileEditor?.[field+'Preview']) URL.revokeObjectURL(state.profileEditor[field+'Preview']);
+  state.profileEditor=null;
+}
+function profilePage() {
+  if (!state.session) return `<section class="card"><h2>Dein eigenes Profil</h2><p>Melde dich an, um dein Profil zu gestalten.</p></section>`;
+  const profile=state.viewedProfile||state.profile;
+  if (!profile) return '<p>Profil wird geladen …</p>';
+  const own=profile.id===state.session.user.id;
+  const editor=own?state.profileEditor:null;
+  const ready='bio' in profile;
+  const avatar=editor?.avatarPreview || (editor?.removeAvatar?null:profile.avatarUrl);
+  const banner=editor?.bannerPreview || (editor?.removeBanner?null:profile.bannerUrl);
+  return `<section class="profile-card"><div class="profile-banner">${banner?photoButton(banner,'Profilbanner'):'<span aria-hidden="true">◭</span>'}</div><div class="profile-details"><div class="profile-avatar">${avatar?photoButton(avatar,'Profilbild'):`<span>${escape((profile.display_name||'?').slice(0,2).toUpperCase())}</span>`}</div><h2>${escape(editor?.name??profile.display_name)}</h2><p class="profile-bio">${escape(editor?.bio??profile.bio??'')}</p>${state.profileError?`<p class="error">${escape(state.profileError)}</p>`:''}${!ready?'<p>Profilgestaltung muss noch in Supabase eingerichtet werden.</p>':''}${own&&!editor?btn('edit-profile','Profil bearbeiten',blocked()||!ready):''}</div></section>${editor?`<section class="card"><h2>Dein Profil gestalten</h2><form id="profile-form"><label>Anzeigename<input name="display_name" value="${escape(editor.name)}" required minlength="2" maxlength="32" autocomplete="nickname"></label><label>Profilbeschreibung<textarea name="bio" rows="4" maxlength="500" placeholder="Dein Lieblingsberg, deine Crew, dein Winter …">${escape(editor.bio)}</textarea></label><label>Profilbild auswählen<input id="avatar-file" type="file" accept="image/jpeg,image/png,image/webp" ${state.busy?'disabled':''}></label>${avatar?btn('remove-avatar','Profilbild entfernen',state.busy,'text-button'):''}<label>Banner auswählen<input id="banner-file" type="file" accept="image/jpeg,image/png,image/webp" ${state.busy?'disabled':''}></label>${banner?btn('remove-banner','Banner entfernen',state.busy,'text-button'):''}${btn('save-profile','Profil speichern',blocked())}${btn('cancel-profile','Abbrechen',state.busy,'text-button')}</form></section>`:''}`;
+}
+async function profileImages(profile) {
+  let failed=false;
+  const resolve=async path=>{if(!path)return null;try{return await signed('profile-media',path)}catch{failed=true;return null}};
+  const [avatarUrl,bannerUrl]=await Promise.all([resolve(profile.avatar_path),resolve(profile.banner_path)]);
+  return {...profile,avatarUrl,bannerUrl,mediaFailed:failed};
+}
+async function openMember(id) {
+  if(blocked())return;
+  if(id===state.session.user.id){state.viewedProfile=null;state.tab='Profil';render();return;}
+  await run(async()=>{const {data,error}=await db.from('profiles').select('*').eq('id',id).single();if(error)throw error;state.viewedProfile=await profileImages(data);state.profileError=state.viewedProfile.mediaFailed?'Profilbilder konnten nicht geladen werden. Bitte aktualisieren.':'';state.tab='Profil';});
+}
+function bindProfileEditor() {
+  on('edit-profile',()=>{state.profileEditor={name:state.profile.display_name,bio:state.profile.bio||'',avatar:null,banner:null,removeAvatar:false,removeBanner:false};render()});
+  on('cancel-profile',e=>{e.preventDefault();resetProfileEditor();render()});
+  const form=document.getElementById('profile-form');
+  if(!form)return;
+  form.querySelector('[name=display_name]').oninput=e=>state.profileEditor.name=e.target.value;
+  form.querySelector('[name=bio]').oninput=e=>state.profileEditor.bio=e.target.value;
+  form.onsubmit=e=>{e.preventDefault();saveProfile()};
+  for(const field of ['avatar','banner']){
+    const file=document.getElementById(field+'-file');
+    file.onchange=()=>{const selected=file.files[0];if(!selected)return;const editor=state.profileEditor;if(editor[field+'Preview'])URL.revokeObjectURL(editor[field+'Preview']);editor[field]=selected;editor[field+'Preview']=URL.createObjectURL(selected);editor['remove'+(field==='avatar'?'Avatar':'Banner')]=false;render()};
+    on('remove-'+field,e=>{e.preventDefault();const editor=state.profileEditor;if(editor[field+'Preview'])URL.revokeObjectURL(editor[field+'Preview']);editor[field+'Preview']=null;editor[field]=null;editor['remove'+(field==='avatar'?'Avatar':'Banner')]=true;render()});
+  }
+}
+async function saveProfile() {
+  if(blocked()||!state.profileEditor)return;
+  const editor=state.profileEditor,old=state.profile;
+  await run(async()=>{
+    const name=editor.name.trim();if(name.length<2||name.length>32)throw Error('Der Anzeigename muss 2 bis 32 Zeichen haben.');
+    const uploaded=[];
+    const changes={display_name:name,bio:editor.bio.trim(),avatar_path:editor.removeAvatar?null:old.avatar_path,banner_path:editor.removeBanner?null:old.banner_path};
+    try {
+      for(const field of ['avatar','banner'])if(editor[field]){const path=await upload('profile-media',editor[field],crypto.randomUUID());uploaded.push(path);changes[field+'_path']=path;}
+      const {data,error}=await db.from('profiles').update(changes).eq('id',state.session.user.id).select('*').single();
+      if(error)throw error;
+      state.profile=await profileImages(data);state.viewedProfile=null;
+    } catch(error) {
+      for(const path of uploaded)try{await removeImage(db,{userId:state.session.user.id,bucket:'profile-media',path},state.session.user.id)}catch{try{savePendingImages([...pendingImages(),{userId:state.session.user.id,bucket:'profile-media',path}])}catch{}}
+      throw error;
+    }
+    resetProfileEditor();
+    const obsolete=['avatar','banner'].map(field=>old[field+'_path']).filter(path=>path&&path!==changes.avatar_path&&path!==changes.banner_path);
+    let cleanupFailed=false;
+    try {savePendingImages([...pendingImages(),...obsolete.map(path=>({userId:state.session.user.id,bucket:'profile-media',path}))]);await cleanImages()}catch{cleanupFailed=true}
+    await load();state.message='Profil gespeichert.';
+    if(cleanupFailed)state.error='Profil gespeichert. Alte Bilddateien konnten noch nicht entfernt werden. Bitte Bilddateien erneut löschen.';
+  });
 }
 function render() {
   closePhotoViewer();
-  const titles={Berg:'Der Berg ruft.',Duell:'Deine Crew. Dein Ranking.',Fotos:'Momente im Schnee.'};
-  root.innerHTML=`<main><header><a class="brand" href="/">◭ SKIDUELL</a><button id="account" class="profile" ${state.busy||state.active||state.draft?'disabled':''}>${state.session?'Abmelden':'Anmelden'}</button></header>${!configured?'<div class="setup">Vorschau · Online-Verbindung noch nicht eingerichtet</div>':''}<h1>${titles[state.tab]}</h1><div id="feedback" role="status" aria-live="polite">${state.error?`<p class="error">${escape(state.error)}</p>`:state.message?`<p class="success">${escape(state.message)}</p>`:''}</div>${state.session&&pendingImages().length?btn('retry-images','Bilddateien erneut löschen',state.busy,'outline'):''}${state.auth?authPanel():''}${state.session?btn('refresh',state.loaded?'↻ Aktualisieren':'Daten erneut laden',state.busy,'text-button'):''}${!state.session&&configured&&!state.auth?btn('join','Anmelden & mitmachen'):''}${state.tab==='Berg'?mountain():state.tab==='Duell'?rankings():photos()}</main><nav aria-label="Hauptnavigation">${[['Berg','◭'],['Duell','⚑'],['Fotos','▧']].map(([t,icon])=>`<button data-tab="${t}" class="${state.tab===t?'active':''}" aria-current="${state.tab===t?'page':'false'}"><span>${icon}</span>${t}</button>`).join('')}</nav>`;
+  const titles={Berg:'Der Berg ruft.',Duell:'Deine Crew. Dein Ranking.',Fotos:'Momente im Schnee.',Profil:'Dein Profil.'};
+  root.innerHTML=`<main><header><a class="brand" href="/">◭ SKIDUELL</a><button id="account" class="profile" ${state.busy||state.active||state.draft?'disabled':''}>${state.session?'Abmelden':'Anmelden'}</button></header>${!configured?'<div class="setup">Vorschau · Online-Verbindung noch nicht eingerichtet</div>':''}<h1>${titles[state.tab]}</h1><div id="feedback" role="status" aria-live="polite">${state.error?`<p class="error">${escape(state.error)}</p>`:state.message?`<p class="success">${escape(state.message)}</p>`:''}</div>${state.session&&pendingImages().length?btn('retry-images','Bilddateien erneut löschen',state.busy,'outline'):''}${state.auth?authPanel():''}${state.session?btn('refresh',state.loaded?'↻ Aktualisieren':'Daten erneut laden',state.busy,'text-button'):''}${!state.session&&configured&&!state.auth?btn('join','Anmelden & mitmachen'):''}${state.tab==='Berg'?mountain():state.tab==='Duell'?rankings():state.tab==='Profil'?profilePage():photos()}</main><nav aria-label="Hauptnavigation">${[['Berg','◭'],['Duell','⚑'],['Fotos','▧'],['Profil','◉']].map(([t,icon])=>`<button data-tab="${t}" class="${state.tab===t?'active':''}" aria-current="${state.tab===t?'page':'false'}"><span>${icon}</span>${t}</button>`).join('')}</nav>`;
   bindPhotoViewer(root);
-  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{state.tab=b.dataset.tab;render();window.scrollTo(0,0)});
+  bindProfileEditor();
+  document.querySelectorAll('[data-member]').forEach(button=>button.onclick=()=>openMember(button.dataset.member));
+  document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{if(state.busy)return;resetProfileEditor();state.viewedProfile=null;state.profileError='';state.tab=b.dataset.tab;render();window.scrollTo(0,0)});
   document.querySelectorAll('[data-delete-kind]').forEach(button=>button.onclick=()=>deleteEntry(button.dataset.deleteKind,button.dataset.deleteId));
   on('retry-images',()=>run(async()=>{await cleanImages();state.message='Bilddateien gelöscht.'}));
   on('account',async()=>{if(state.session) await run(async()=>{const {error}=await db.auth.signOut();if(error)throw error;}); else {state.auth=!state.auth;render()}});
@@ -139,9 +208,10 @@ async function authenticate(signup){
 async function load(){
   if(!state.session)return;const current=++epoch,userId=state.session.user.id;
   try{
-    const responses=await Promise.all([db.from('profiles').select('display_name').eq('id',userId).single(),db.from('tours').select('*').order('started_at',{ascending:false}),db.from('apres_visits').select('*').order('created_at',{ascending:false}),db.from('posts').select('*, profiles(display_name)').order('created_at',{ascending:false}).limit(50),db.rpc('leaderboard')]);
+    const responses=await Promise.all([db.from('profiles').select('*').eq('id',userId).single(),db.from('tours').select('*').order('started_at',{ascending:false}),db.from('apres_visits').select('*').order('created_at',{ascending:false}),db.from('posts').select('*, profiles(display_name)').order('created_at',{ascending:false}).limit(50),db.rpc('leaderboard')]);
     for(const r of responses)if(r.error)throw r.error;
-    const [profile,tours,visits,feed,leaders]=responses.map(r=>r.data);
+    const [rawProfile,tours,visits,feed,leaders]=responses.map(r=>r.data);
+    const profile=await profileImages(rawProfile);
     const urls=await Promise.all([Promise.all(visits.map(async v=>({...v,url:await signed('apres-proofs',v.proof_path)}))),Promise.all(feed.map(async p=>({...p,display_name:p.profiles?.display_name||'Mitglied',url:await signed('community-photos',p.image_path)})))]);
     if(current!==epoch)return;await Promise.all([loadBeer(),loadMix()]);if(current!==epoch)return;Object.assign(state,{profile,tours,visits:urls[0],feed:urls[1],leaders,loaded:true});
   }catch(e){if(current===epoch){state.error='Daten konnten nicht geladen werden: '+e.message;state.loaded=false;}}
@@ -169,5 +239,5 @@ async function stop(){if(blocked())return;clearWatch();state.active=false;state.
 async function persistTour(){if(blocked()||!state.draft)return;await run(async()=>{const {error}=await db.from('tours').upsert(state.draft,{onConflict:'id'});if(error)throw error;state.draft=null;state.message='Tour gespeichert.';await load()})}
 document.addEventListener('visibilitychange',()=>{previous=null;if(document.hidden&&state.active)state.message='Browser-Aufzeichnung kann bei gesperrtem Bildschirm aussetzen.';else if(state.active)render()});
 window.addEventListener('beforeunload',event=>{if(state.active||state.draft){event.preventDefault();event.returnValue=''}});
-if(db){db.auth.onAuthStateChange((_event,session)=>{epoch++;const changed=state.session?.user.id!==session?.user.id;state.session=session;if(changed){clearWatch();state.active=false;state.draft=null;resetProof();Object.assign(state,{tours:[],visits:[],feed:[],leaders:[],beerLeaders:[],beerReady:false,beerError:'',mixLeaders:[],mixReady:false,mixError:'',profile:null,loaded:false});}if(session){state.auth=false;queueMicrotask(()=>load())}render()});setInterval(()=>{if(state.session&&!state.busy&&!state.active)load()},45*60*1000);}
+if(db){db.auth.onAuthStateChange((_event,session)=>{epoch++;const changed=state.session?.user.id!==session?.user.id;state.session=session;if(changed){clearWatch();state.active=false;state.draft=null;resetProof();resetProfileEditor();Object.assign(state,{tours:[],visits:[],feed:[],leaders:[],beerLeaders:[],beerReady:false,beerError:'',mixLeaders:[],mixReady:false,mixError:'',profile:null,viewedProfile:null,profileError:'',loaded:false});}if(session){state.auth=false;queueMicrotask(()=>load())}render()});setInterval(()=>{if(state.session&&!state.busy&&!state.active)load()},45*60*1000);}
 render();

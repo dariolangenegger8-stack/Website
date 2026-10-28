@@ -19,6 +19,7 @@ try{
  await db.exec(await readFile(new URL('../supabase/migrations/202610280001_skiduell.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/202610280002_beer.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/202610280003_mischen.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/202610280004_profiles.sql',import.meta.url),'utf8'));
  await db.query(`insert into auth.users values($1,'{"display_name":"Alice"}'),($2,'{"display_name":"Bob"}')`,[alice,bob]);
  const profiles=await db.query('select count(*)::int n from public.profiles');assert.equal(profiles.rows[0].n,2);
  await db.exec(`set role authenticated; set request.jwt.claim.sub='${alice}';`);
@@ -40,7 +41,20 @@ try{
  assert.equal((await db.query('select public.adjust_mix(-1) n')).rows[0].n,1);
  await assert.rejects(()=>db.query('select public.adjust_mix(7)'));
  assert.equal((await db.query('select count from public.beer_counts')).rows[0].count,1);
+ const avatar=alice+'/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa.jpg';
+ const banner=alice+'/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb.jpg';
+ await db.query(`insert into storage.objects(bucket_id,name) values('profile-media',$1),('profile-media',$2)`,[avatar,banner]);
+ await db.query(`update public.profiles set display_name='Alice Ski',bio='Mein Winter',avatar_path=$1,banner_path=$2 where id=$3`,[avatar,banner,alice]);
+ await assert.rejects(()=>db.query(`update public.profiles set avatar_path=$1 where id=$2`,[bob+'/bad.jpg',alice]));
+ await assert.rejects(()=>db.query(`update public.profiles set bio=$1 where id=$2`,['x'.repeat(501),alice]));
+ await assert.rejects(()=>db.query(`update public.profiles set id=$1 where id=$2`,[bob,alice]));
+ assert.equal((await db.query(`delete from storage.objects where bucket_id='profile-media' and name=$1 returning id`,[avatar])).rows.length,0);
  await db.exec(`set request.jwt.claim.sub='${bob}'`);
+ assert.equal((await db.query(`select bio from public.profiles where id=$1`,[alice])).rows[0].bio,'Mein Winter');
+ assert.equal((await db.query(`select name from storage.objects where bucket_id='profile-media'`)).rows.length,2);
+ assert.equal((await db.query(`update public.profiles set bio='fremd' where id=$1 returning id`,[alice])).rows.length,0);
+ await assert.rejects(()=>db.query(`insert into storage.objects(bucket_id,name) values('profile-media',$1)`,[alice+'/foreign.jpg']));
+ assert.equal((await db.query(`delete from storage.objects where bucket_id='profile-media' and name=$1 returning id`,[avatar])).rows.length,0);
  assert.equal((await db.query('select * from public.mix_counts')).rows.length,0);
  assert.equal((await db.query('select * from public.mix_leaderboard()')).rows.find(p=>p.user_id===alice).mixes,1);
  assert.equal((await db.query('select public.adjust_mix(-1) n')).rows[0].n,0);
@@ -68,6 +82,9 @@ try{
  assert.equal((await db.query(`delete from storage.objects where bucket_id='community-photos' and name=$1 returning id`,[`${alice}/${post}.jpg`])).rows.length,1);
  assert.equal((await db.query(`delete from public.tours where id=$1 returning id`,[tour])).rows.length,1);
  const after=(await db.query('select * from public.leaderboard()')).rows.find(p=>p.user_id===alice);assert.equal(after.km,0);assert.equal(Number(after.apres_visits),0);assert.equal(after.max_speed,null);
+ await db.query(`update public.profiles set avatar_path=null,banner_path=null where id=$1`,[alice]);
+ assert.equal((await db.query(`delete from storage.objects where bucket_id='profile-media' returning id`)).rows.length,2);
+ console.log('PASS: profile edit, bio limit, avatar/banner ownership, member visibility, protected referenced images, old image cleanup, foreign updates denied');
  console.log('PASS: owner deletion, other-user deletion denied, image cleanup after metadata removal, aggregate updates');
  await db.exec(`set role anon; set request.jwt.claim.sub=''`);
  await assert.rejects(()=>db.query('select * from public.tours'));

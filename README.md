@@ -81,3 +81,7 @@ Fotos im Feed, Après-Ski-Einträge und Skitouren haben einen Löschen-Button nu
 ## Foto-Großansicht
 
 Fotos im Feed sowie Après-Ski-Beweisfotos (auch vor dem Speichern) öffnen per Klick oder Tastatur eine modale Großansicht. Das gesamte Bild wird ohne Beschnitt angezeigt. Schließen per Button, Escape oder Hintergrund; Fokus kehrt zum Foto zurück. Keine zusätzliche Migration notwendig.
+
+## Persönliche Profile
+
+Für Profilbeschreibung, Profilbild und Banner ausschließlich `supabase/migrations/202610280004_profiles.sql` im Supabase-SQL-Editor ausführen. Die Migration erweitert bestehende Profile; vorhandene Konten, Touren und Tabellen bleiben erhalten. Unter „Profil“ kann jeder den eigenen Anzeigenamen (2–32 Zeichen), die Beschreibung (bis 500 Zeichen) und Bilder bearbeiten, Vorschauen sehen, abbrechen oder speichern. Profilbilder und Banner können entfernt werden; ersetzte Bilddateien werden bereinigt. Andere Mitglieder öffnen Profile über die Namen in Ranglisten oder im Fotofeed und können diese nur ansehen. Profile und verknüpfte Bilder sind nur für angemeldete Mitglieder lesbar. Der private Bucket `profile-media` erlaubt eigene Uploads; referenzierte Bilder sind vor Löschung geschützt. Keine Administrator-Schlüssel im Browser. Ohne Migration bleibt die Profilbearbeitung deaktiviert, die bisherigen Funktionen bleiben verfügbar.

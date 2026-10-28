@@ -13,7 +13,7 @@ export async function deleteOwnEntry(db, kind, entry, userId) {
   return definition.bucket ? {userId,bucket:definition.bucket,path:entry[definition.imageField]} : null;
 }
 export async function removeImage(db, image, userId) {
-  if (image.userId !== userId || !['apres-proofs','community-photos'].includes(image.bucket) || !image.path?.startsWith(userId+'/')) throw Error('Ungültige Bildzuordnung.');
+  if (image.userId !== userId || !['apres-proofs','community-photos','profile-media'].includes(image.bucket) || !image.path?.startsWith(userId+'/')) throw Error('Ungültige Bildzuordnung.');
   const {error} = await db.storage.from(image.bucket).remove([image.path]);
   if(error) throw error;
 }
