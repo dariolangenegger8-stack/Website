@@ -1,3 +1,4 @@
+import { createSayings } from './sayings.mjs';
 import { createAvatarLoader, avatarMarkup, messageIcon } from './avatars.mjs';
 import { createPhotoReactions } from './photo-reactions.mjs';
 import { createDirectMessages } from './direct-messages.mjs';
@@ -24,6 +25,7 @@ const photoButton = (src, alt) => `<button type="button" class="photo-trigger" a
 const deleteButton = (kind, entry) => entry.user_id === state.session?.user.id ? `<button class="delete-button" data-delete-kind="${kind}" data-delete-id="${escape(entry.id)}" ${blocked()?'disabled':''}>${kind==='photo'?'Foto':kind==='visit'?'Eintrag':'Tour'} löschen</button>` : '';
 const blocked = () => state.busy || !state.session || !state.loaded;
 const pattern = icon => `<div class="pattern" aria-hidden="true">${Array.from({length:18},(_,i)=>`<span style="left:${(i*37+4)%87}%;top:${18+i*55}px;transform:rotate(${i%2?22:-22}deg)">${icon}</span>`).join('')}</div>`;
+const sayings=createSayings(escape);
 const avatars=createAvatarLoader(db);
 const reactions=createPhotoReactions({db,getUser:()=>state.session?.user,isAdmin:()=>state.admin,escape,memberButton});
 root.addEventListener('reaction-member',event=>openMember(event.detail));
@@ -217,9 +219,10 @@ function render() {
   direct.unmount();
   closePhotoViewer();
   const titles={Berg:'Der Berg ruft.',Duell:'Deine Ranglisten.',Fotos:'Momente im Schnee.',Profil:'Dein Profil.',Admin:'Administration.',Chat:'Nachrichten.'};
-  root.innerHTML=`<main><header><a class="brand" href="/">◭ SKIDUELL</a><button id="account" class="profile" ${state.busy||state.active||state.draft?'disabled':''}>${state.session?'Abmelden':'Anmelden'}</button></header>${!configured?'<div class="setup">Vorschau · Online-Verbindung noch nicht eingerichtet</div>':''}<h1>${titles[state.tab]}</h1><div id="feedback" role="status" aria-live="polite">${state.error?`<p class="error">${escape(state.error)}</p>`:state.message?`<p class="success">${escape(state.message)}</p>`:''}</div>${state.session&&pendingImages().length?btn('retry-images','Bilddateien erneut löschen',state.busy,'outline'):''}${state.auth?authPanel():''}${state.session?btn('refresh',state.loaded?'↻ Aktualisieren':'Daten erneut laden',state.busy,'text-button'):''}${!state.session&&configured&&!state.auth?btn('join','Anmelden & mitmachen'):''}${state.tab==='Berg'?mountain():state.tab==='Duell'?rankings():state.tab==='Profil'?profilePage():state.tab==='Admin'?adminPage():state.tab==='Chat'?chatPage():photos()}</main><nav aria-label="Hauptnavigation">${[['Berg','◭'],['Duell','⚑'],['Fotos','▧'],['Chat',messageIcon()],['Profil','◉'],...(state.admin?[['Admin','⚙']]:[])].map(([t,icon])=>`<button data-tab="${t}" class="${state.tab===t?'active':''}" aria-current="${state.tab===t?'page':'false'}"><span>${icon}</span>${t}</button>`).join('')}</nav>`;
+  root.innerHTML=`<main><header><a class="brand" href="/">◭ SKIDUELL</a><button id="account" class="profile" ${state.busy||state.active||state.draft?'disabled':''}>${state.session?'Abmelden':'Anmelden'}</button></header>${!configured?'<div class="setup">Vorschau · Online-Verbindung noch nicht eingerichtet</div>':''}<h1>${titles[state.tab]}</h1><div id="feedback" role="status" aria-live="polite">${state.error?`<p class="error">${escape(state.error)}</p>`:state.message?`<p class="success">${escape(state.message)}</p>`:''}</div>${state.session&&pendingImages().length?btn('retry-images','Bilddateien erneut löschen',state.busy,'outline'):''}${state.auth?authPanel():''}${state.session?btn('refresh',state.loaded?'↻ Aktualisieren':'Daten erneut laden',state.busy,'text-button'):''}${!state.session&&configured&&!state.auth?btn('join','Anmelden & mitmachen'):''}${state.tab==='Berg'?mountain():state.tab==='Duell'?rankings():state.tab==='Profil'?profilePage():state.tab==='Admin'?adminPage():state.tab==='Chat'?chatPage():photos()}${sayings.html()}</main><nav aria-label="Hauptnavigation">${[['Berg','◭'],['Duell','⚑'],['Fotos','▧'],['Chat',messageIcon()],['Profil','◉'],...(state.admin?[['Admin','⚙']]:[])].map(([t,icon])=>`<button data-tab="${t}" class="${state.tab===t?'active':''}" aria-current="${state.tab===t?'page':'false'}"><span>${icon}</span>${t}</button>`).join('')}</nav>`;
   if(state.tab==='Chat'){if(state.chatMode==='private')direct.mount(root);else chat.mount(root);}
   if(state.tab==='Fotos')reactions.mount(root,state.feed.map(post=>post.id));
+  sayings.bind(root);
   bindPhotoViewer(root);
   bindProfileEditor();
   on('chat-public',()=>{state.chatMode='public';render()});on('chat-private',()=>{state.chatMode='private';direct.showInbox()});
