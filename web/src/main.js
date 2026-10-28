@@ -154,15 +154,15 @@ async function loadAdminStatus() {
 }
 function adminPage() {
   if(!state.admin)return '';
-  return `<section class="card"><h2>Einträge verwalten</h2><div class="switcher">${[['photo','Fotos'],['visit','Après-Ski'],['tour','Skitouren']].map(([kind,label])=>`<button data-admin-kind="${kind}" class="${state.adminKind===kind?'selected':''}" ${state.busy?'disabled':''}>${label}</button>`).join('')}</div>${!state.adminLoaded?'<p>Einträge laden …</p>':state.adminEntries.map(entry=>`<article class="admin-entry">${entry.url?photoButton(entry.url,state.adminKind==='visit'?'Après-Ski-Beweisfoto':entry.caption||'Bergfoto'):''}<strong>${escape(entry.profiles?.display_name||'Mitglied')}</strong><p>${date(entry.created_at||entry.started_at)}${state.adminKind==='tour'?' · '+Number(entry.km).toFixed(2)+' km':entry.caption?' · '+escape(entry.caption):''}</p><button class="delete-button" data-admin-delete="${escape(entry.id)}" ${state.busy?'disabled':''}>Eintrag löschen</button></article>`).join('')||'<p>Keine Einträge</p>'}<div class="row">${btn('admin-prev','Zurück',state.busy||state.adminPage===0,'outline')}${btn('admin-next','Weiter',state.busy||!state.adminMore,'outline')}</div></section>`;
+  return `<section class="card"><h2>Einträge verwalten</h2><div class="switcher">${[['photo','Fotos'],['visit','Après-Ski'],['tour','Skitouren'],['beer','🍺 Bier'],['mix','🍹 Mischen']].map(([kind,label])=>`<button data-admin-kind="${kind}" class="${state.adminKind===kind?'selected':''}" ${state.busy?'disabled':''}>${label}</button>`).join('')}</div>${!state.adminLoaded?'<p>Einträge laden …</p>':state.adminEntries.map(entry=>`<article class="admin-entry">${entry.url?photoButton(entry.url,state.adminKind==='visit'?'Après-Ski-Beweisfoto':entry.caption||'Bergfoto'):''}<strong>${escape(entry.profiles?.display_name||'Mitglied')}</strong><p>${date(entry.created_at||entry.started_at||entry.updated_at)}${['beer','mix'].includes(state.adminKind)?' · '+entry.count+' gesamt':state.adminKind==='tour'?' · '+Number(entry.km).toFixed(2)+' km':entry.caption?' · '+escape(entry.caption):''}</p><button class="delete-button" data-admin-delete="${escape(entry.id)}" ${state.busy?'disabled':''}>${['beer','mix'].includes(state.adminKind)?'Gesamtzähler auf 0 setzen':'Eintrag löschen'}</button></article>`).join('')||'<p>Keine Einträge</p>'}<div class="row">${btn('admin-prev','Zurück',state.busy||state.adminPage===0,'outline')}${btn('admin-next','Weiter',state.busy||!state.adminMore,'outline')}</div></section>`;
 }
 async function loadAdminEntries() {
   if(!state.admin||!state.session)return;
   const currentUser=state.session.user.id,kind=state.adminKind,page=state.adminPage;
   const definition=deletionDefinition(kind);
-  const {data,error}=await db.from(definition.table).select('*, profiles(display_name)').order(kind==='tour'?'started_at':'created_at',{ascending:false}).range(page*25,page*25+25);
+  const {data,error}=await db.from(definition.table).select('*, profiles(display_name)').order(kind==='tour'?'started_at':definition.idField?'updated_at':'created_at',{ascending:false}).range(page*25,page*25+25);
   if(error)throw error;
-  const entries=await Promise.all(data.slice(0,25).map(async entry=>({...entry,url:definition.bucket?await signed(definition.bucket,entry[definition.imageField]):null})));
+  const entries=await Promise.all(data.slice(0,25).map(async entry=>({...entry,id:entry[definition.idField||'id'],url:definition.bucket?await signed(definition.bucket,entry[definition.imageField]):null})));
   if(state.session?.user.id!==currentUser||!state.admin||state.adminKind!==kind||state.adminPage!==page)return;
   state.adminEntries=entries;state.adminMore=data.length>25;state.adminLoaded=true;
 }
@@ -174,14 +174,14 @@ async function changeAdminList(kind,page=0) {
 async function deleteAdminEntry(id) {
   if(blocked()||!state.admin)return;
   const definition=deletionDefinition(state.adminKind),entry=state.adminEntries.find(e=>e.id===id);
-  if(!entry||!window.confirm(`${definition.label} von „${entry.profiles?.display_name||'Mitglied'}“ endgültig löschen?`))return;
+  if(!entry||!window.confirm(`${definition.label} von „${entry.profiles?.display_name||'Mitglied'}“ ${definition.idField?'auf 0 zurücksetzen':'endgültig löschen'}?`))return;
   await run(async()=>{
     // The UI flag never grants rights: Supabase RLS checks the admin role on every request.
     const image=await deleteOwnEntry(db,state.adminKind,entry,state.session.user.id,true);
     let cleanupFailed=false;
     if(image)try{savePendingImages([...pendingImages(),image]);await cleanImages()}catch{cleanupFailed=true}
     await load();
-    state.message='Eintrag gelöscht.';
+    state.message=definition.idField?'Gesamtzähler auf 0 gesetzt.':'Eintrag gelöscht.';
     if(cleanupFailed)state.error='Eintrag gelöscht. Bitte Bilddateien erneut löschen.';
   });
 }

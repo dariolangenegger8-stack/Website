@@ -21,6 +21,7 @@ try{
  await db.exec(await readFile(new URL('../supabase/migrations/202610280003_mischen.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/202610280004_profiles.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/202610280005_admin.sql',import.meta.url),'utf8'));
+ await db.exec(await readFile(new URL('../supabase/migrations/202610280006_admin_counters.sql',import.meta.url),'utf8'));
  await db.query(`insert into auth.users values($1,'{"display_name":"Alice"}'),($2,'{"display_name":"Bob"}')`,[alice,bob]);
  const profiles=await db.query('select count(*)::int n from public.profiles');assert.equal(profiles.rows[0].n,2);
  await db.exec(`set role authenticated; set request.jwt.claim.sub='${alice}';`);
@@ -89,6 +90,8 @@ try{
  console.log('PASS: owner deletion, other-user deletion denied, image cleanup after metadata removal, aggregate updates');
  await assert.rejects(()=>db.query(`insert into public.app_admins(user_id) values($1)`,[alice]));
  assert.equal((await db.query('select public.is_admin() value')).rows[0].value,false);
+ assert.equal((await db.query(`delete from public.beer_counts where user_id=$1 returning user_id`,[bob])).rows.length,0);
+ assert.equal((await db.query(`delete from public.mix_counts where user_id=$1 returning user_id`,[bob])).rows.length,0);
  await db.exec(`reset role`);
  await db.query(`insert into public.app_admins(user_id) values($1)`,[alice]);
  await db.exec(`set role authenticated; set request.jwt.claim.sub='${bob}'`);
@@ -99,8 +102,16 @@ try{
  await db.query(`insert into storage.objects(bucket_id,name) values('apres-proofs',$1),('community-photos',$2)`,[bob+'/'+adminVisit+'.jpg',bob+'/'+adminPost+'.jpg']);
  await db.query(`insert into public.apres_visits(id,user_id,proof_path) values($1,$2,$3)`,[adminVisit,bob,bob+'/'+adminVisit+'.jpg']);
  await db.query(`insert into public.posts(id,user_id,image_path) values($1,$2,$3)`,[adminPost,bob,bob+'/'+adminPost+'.jpg']);
+ await db.query('select public.adjust_beer(1)');await db.query('select public.adjust_mix(1)');
  await db.exec(`set request.jwt.claim.sub='${alice}'`);
  assert.equal((await db.query('select public.is_admin() value')).rows[0].value,true);
+ assert.equal((await db.query(`select count from public.beer_counts where user_id=$1`,[bob])).rows[0].count,1);
+ assert.equal((await db.query(`select count from public.mix_counts where user_id=$1`,[bob])).rows[0].count,1);
+ assert.equal((await db.query(`delete from public.beer_counts where user_id=$1 returning user_id`,[bob])).rows.length,1);
+ assert.equal((await db.query(`delete from public.mix_counts where user_id=$1 returning user_id`,[bob])).rows.length,1);
+ assert.equal((await db.query('select * from public.beer_leaderboard()')).rows.find(p=>p.user_id===bob).beers,0);
+ assert.equal((await db.query('select * from public.mix_leaderboard()')).rows.find(p=>p.user_id===bob).mixes,0);
+ console.log('PASS: admin resets other-user beer and mix totals; normal users cannot reset others');
  await assert.rejects(()=>db.query(`insert into public.app_admins(user_id) values($1)`,[bob]));
  assert.equal((await db.query(`select * from public.apres_visits where id=$1`,[adminVisit])).rows.length,1);
  assert.equal((await db.query(`select * from storage.objects where bucket_id='apres-proofs' and name=$1`,[bob+'/'+adminVisit+'.jpg'])).rows.length,1);
