@@ -17,6 +17,9 @@ let serverError='';server.stderr.on('data',chunk=>serverError+=chunk);server.std
  const user={id:uid,aud:'authenticated',role:'authenticated',email:'ski@example.test',app_metadata:{provider:'email'},user_metadata:{display_name:'Dario'},created_at:new Date().toISOString()};
  const token=Buffer.from(JSON.stringify({alg:'HS256',typ:'JWT'})).toString('base64url')+'.'+Buffer.from(JSON.stringify({sub:uid,aud:'authenticated',role:'authenticated',exp:Math.floor(Date.now()/1000)+3600})).toString('base64url')+'.test';
  await page.route('https://skidu-test.supabase.co/**',async route=>{const req=route.request(),url=new URL(req.url()),path=url.pathname;let data=null,status=200;const body=()=>req.postDataJSON();
+  const selection=url.searchParams.get('select')||'';
+  if(selection.includes('profiles(')){await route.fulfill({status:300,contentType:'application/json',body:JSON.stringify({code:'PGRST201',message:'Could not embed because more than one relationship was found'})});return;}
+  if(selection.includes('profiles!')){const table=path.split('/').pop();assert(selection.includes('profiles:profiles!'+table+'_user_id_fkey(display_name)'),'Author join must use the explicit author foreign key for '+table);}
   if(req.method()==='OPTIONS'){await route.fulfill({status:204,headers:{'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'*'}});return}
   if(path.includes('/auth/v1/token'))data={access_token:token,refresh_token:'test-refresh',token_type:'bearer',expires_in:3600,user};
   else if(path.includes('/auth/v1/user'))data=user;

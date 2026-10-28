@@ -166,7 +166,7 @@ async function loadAdminEntries() {
   if(!state.admin||!state.session)return;
   const currentUser=state.session.user.id,kind=state.adminKind,page=state.adminPage;
   const definition=deletionDefinition(kind);
-  const {data,error}=await db.from(definition.table).select('*, profiles(display_name)').order(kind==='tour'?'started_at':definition.idField?'updated_at':'created_at',{ascending:false}).range(page*25,page*25+25);
+  const {data,error}=await db.from(definition.table).select(`*, profiles:profiles!${definition.table}_user_id_fkey(display_name)`).order(kind==='tour'?'started_at':definition.idField?'updated_at':'created_at',{ascending:false}).range(page*25,page*25+25);
   if(error)throw error;
   const entries=await Promise.all(data.slice(0,25).map(async entry=>({...entry,id:entry[definition.idField||'id'],url:definition.bucket?await signed(definition.bucket,entry[definition.imageField]):null})));
   if(state.session?.user.id!==currentUser||!state.admin||state.adminKind!==kind||state.adminPage!==page)return;
@@ -276,7 +276,7 @@ async function authenticate(signup){
 async function load(){
   if(!state.session)return;const current=++epoch,userId=state.session.user.id;
   try{
-    const responses=await Promise.all([db.from('profiles').select('*').eq('id',userId).single(),db.from('tours').select('*').eq('user_id',userId).order('started_at',{ascending:false}),db.from('apres_visits').select('*').eq('user_id',userId).order('created_at',{ascending:false}),db.from('posts').select('*, profiles(display_name)').order('created_at',{ascending:false}).limit(50),db.rpc('leaderboard')]);
+    const responses=await Promise.all([db.from('profiles').select('*').eq('id',userId).single(),db.from('tours').select('*').eq('user_id',userId).order('started_at',{ascending:false}),db.from('apres_visits').select('*').eq('user_id',userId).order('created_at',{ascending:false}),db.from('posts').select('*, profiles:profiles!posts_user_id_fkey(display_name)').order('created_at',{ascending:false}).limit(50),db.rpc('leaderboard')]);
     for(const r of responses)if(r.error)throw r.error;
     const [rawProfile,tours,visits,feed,leaders]=responses.map(r=>r.data);
     const profile=await profileImages(rawProfile);

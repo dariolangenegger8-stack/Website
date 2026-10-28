@@ -25,6 +25,11 @@ try{
  await db.exec(await readFile(new URL('../supabase/migrations/202610280007_admin_reduce.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/202610280008_chat.sql',import.meta.url),'utf8'));
  await db.exec(await readFile(new URL('../supabase/migrations/202610280009_photo_reactions.sql',import.meta.url),'utf8'));
+ for(const table of ['posts','tours','apres_visits','beer_counts','mix_counts','photo_comments','chat_messages']){
+  const relation=await db.query(`select conname from pg_constraint where conrelid=('public.'||$1)::regclass and confrelid='public.profiles'::regclass and contype='f'`,[table]);
+  assert(relation.rows.some(row=>row.conname===table+'_user_id_fkey'));
+ }
+ console.log('PASS: explicit author foreign-key names used by website exist after all migrations');
  await db.query(`insert into auth.users values($1,'{"display_name":"Alice"}'),($2,'{"display_name":"Bob"}')`,[alice,bob]);
  const profiles=await db.query('select count(*)::int n from public.profiles');assert.equal(profiles.rows[0].n,2);
  await db.exec(`set role authenticated; set request.jwt.claim.sub='${alice}';`);

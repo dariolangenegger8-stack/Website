@@ -24,7 +24,7 @@ export function createPhotoReactions({db,getUser,isAdmin,escape,memberButton}) {
   }
   async function loadComments(id){
     const request=version,userId=getUser()?.id;if(!userId)return;
-    const {data,error}=await db.from('photo_comments').select('id,post_id,user_id,body,created_at,profiles(display_name)').eq('post_id',id).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(50);
+    const {data,error}=await db.from('photo_comments').select('id,post_id,user_id,body,created_at,profiles:profiles!photo_comments_user_id_fkey(display_name)').eq('post_id',id).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(50);
     if(request!==version||getUser()?.id!==userId)return;
     if(error)throw error;comments.set(id,data.slice().reverse());update(id);
   }

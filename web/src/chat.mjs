@@ -20,7 +20,7 @@ export function createChat({db,getUser,isAdmin,escape,memberButton}) {
     if(!getUser()||loading||!container)return;
     const request=version,userId=getUser().id;loading=true;
     try{
-      const {data,error:failure}=await db.from('chat_messages').select('id,user_id,body,created_at,profiles(display_name)').order('created_at',{ascending:false}).order('id',{ascending:false}).limit(100);
+      const {data,error:failure}=await db.from('chat_messages').select('id,user_id,body,created_at,profiles:profiles!chat_messages_user_id_fkey(display_name)').order('created_at',{ascending:false}).order('id',{ascending:false}).limit(100);
       if(request!==version||getUser()?.id!==userId)return;
       if(failure)throw failure;
       messages=data.slice().reverse();ready=true;error='';
