@@ -77,3 +77,7 @@ Für die neue eigenständige Rangliste nur `supabase/migrations/202610280003_mis
 ## Eigene Einträge löschen
 
 Fotos im Feed, Après-Ski-Einträge und Skitouren haben einen Löschen-Button nur für den Eigentümer. Abbrechen im Dialog erhält den Eintrag. Nach Bestätigung werden Datensatz und zugehörige Bilddatei entfernt; Tour- und Après-Ski-Ranglisten werden neu geladen. Schlägt die Bildbereinigung nach dem Löschen des Eintrags fehl, wird der offene Auftrag lokal nutzerbezogen vorgemerkt und kann mit „Bilddateien erneut löschen“ wiederholt werden. Keine neue SQL-Migration nötig; vorhandene RLS-Regeln erlauben nur eigene Einträge. Bier und Mischen werden weiterhin mit −1 korrigiert.
+
+## Foto-Großansicht
+
+Fotos im Feed sowie Après-Ski-Beweisfotos (auch vor dem Speichern) öffnen per Klick oder Tastatur eine modale Großansicht. Das gesamte Bild wird ohne Beschnitt angezeigt. Schließen per Button, Escape oder Hintergrund; Fokus kehrt zum Foto zurück. Keine zusätzliche Migration notwendig.
