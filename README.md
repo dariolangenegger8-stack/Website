@@ -38,7 +38,7 @@ Keine Tokens oder Passwörter in Chat oder Repository eintragen. Anbieter-Zugang
 - `apres_visits`: private Besuchseinträge. Die Datenbank prüft, dass ein eigenes hochgeladenes Beweisfoto existiert; das Bild wird nicht auf Echtheit geprüft. Gezählt werden Besuche, keine Getränke. Mehrere Besuche am selben Tag sind möglich.
 - `posts`: Foto-Metadaten und Bilder für alle angemeldeten Mitglieder sichtbar, kein anonymer öffentlicher Zugriff.
 - Beide Bild-Buckets sind privat. Beweisfotos sieht nur der Eigentümer. Bilder werden im Browser als JPEG neu kodiert (max. 1600 px), dadurch werden ursprüngliche EXIF-Metadaten nicht übernommen. Anzeige über kurzlebige signierte URLs; wer eine solche URL erhält, kann sie bis zum Ablauf öffnen.
-- Row Level Security begrenzt Tabellen und Storage. Besitzer können Datensätze über die API löschen; Bilder erst nach Löschen des zugehörigen Eintrags. Ein Löschdialog und Account-Löschung sind noch nicht in der Oberfläche vorhanden.
+- Row Level Security begrenzt Tabellen und Storage. Besitzer können Datensätze über die API löschen; Bilder erst nach Löschen des zugehörigen Eintrags. Eigene Fotos, Après-Ski-Einträge und Touren können über einen Bestätigungsdialog gelöscht werden. Account-Löschung ist noch nicht in der Oberfläche vorhanden.
 - Messwerte und Check-ins stammen vom Client, kein manipulationssicheres Wettbewerbssystem. Moderation, Meldungen, Einladungen, Kontowiederherstellung und Produktionsbetrieb mit Backups/Quoten sind noch zu ergänzen. Feed lädt die letzten 50 Bilder, eigene Touren/Check-ins ohne Pagination.
 
 Bestehende Daten der früheren lokalen Handy-App werden nicht automatisch ins Online-Konto übertragen.
@@ -73,3 +73,7 @@ Nach der bestehenden Grundeinrichtung ausschließlich `supabase/migrations/20261
 ## 🍹 Mischen
 
 Für die neue eigenständige Rangliste nur `supabase/migrations/202610280003_mischen.sql` im Supabase-SQL-Editor ausführen. Sie benötigt die Grundeinrichtung mit `profiles`, verändert aber keine bestehenden Bier- oder Après-Ski-Einträge. Mischen hat eigene Zähler und RPCs, mit +1 und −1 bis mindestens null. Ohne angewendete Migration bleibt nur diese Rangliste deaktiviert.
+
+## Eigene Einträge löschen
+
+Fotos im Feed, Après-Ski-Einträge und Skitouren haben einen Löschen-Button nur für den Eigentümer. Abbrechen im Dialog erhält den Eintrag. Nach Bestätigung werden Datensatz und zugehörige Bilddatei entfernt; Tour- und Après-Ski-Ranglisten werden neu geladen. Schlägt die Bildbereinigung nach dem Löschen des Eintrags fehl, wird der offene Auftrag lokal nutzerbezogen vorgemerkt und kann mit „Bilddateien erneut löschen“ wiederholt werden. Keine neue SQL-Migration nötig; vorhandene RLS-Regeln erlauben nur eigene Einträge. Bier und Mischen werden weiterhin mit −1 korrigiert.

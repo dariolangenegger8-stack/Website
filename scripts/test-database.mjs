@@ -58,6 +58,17 @@ try{
  assert.equal(leaderboard.find(p=>p.user_id===alice).km,12.5);assert.equal(leaderboard.find(p=>p.user_id===alice).max_speed,62);assert.equal(Number(leaderboard.find(p=>p.user_id===alice).apres_visits),1);
  assert.equal((await db.query(`update public.tours set km=999 where id=$1 returning id`,[tour])).rows.length,0);
  await assert.rejects(()=>db.query(`insert into storage.objects(bucket_id,name) values('apres-proofs',$1)`,[`${alice}/bad.jpg`]));
+ assert.equal((await db.query(`delete from public.apres_visits where id=$1 returning id`,[visit])).rows.length,0);
+ assert.equal((await db.query(`delete from public.posts where id=$1 returning id`,[post])).rows.length,0);
+ assert.equal((await db.query(`delete from public.tours where id=$1 returning id`,[tour])).rows.length,0);
+ await db.exec(`set request.jwt.claim.sub='${alice}'`);
+ assert.equal((await db.query(`delete from public.apres_visits where id=$1 returning id`,[visit])).rows.length,1);
+ assert.equal((await db.query(`delete from storage.objects where bucket_id='apres-proofs' and name=$1 returning id`,[`${alice}/${visit}.jpg`])).rows.length,1);
+ assert.equal((await db.query(`delete from public.posts where id=$1 returning id`,[post])).rows.length,1);
+ assert.equal((await db.query(`delete from storage.objects where bucket_id='community-photos' and name=$1 returning id`,[`${alice}/${post}.jpg`])).rows.length,1);
+ assert.equal((await db.query(`delete from public.tours where id=$1 returning id`,[tour])).rows.length,1);
+ const after=(await db.query('select * from public.leaderboard()')).rows.find(p=>p.user_id===alice);assert.equal(after.km,0);assert.equal(Number(after.apres_visits),0);assert.equal(after.max_speed,null);
+ console.log('PASS: owner deletion, other-user deletion denied, image cleanup after metadata removal, aggregate updates');
  await db.exec(`set role anon; set request.jwt.claim.sub=''`);
  await assert.rejects(()=>db.query('select * from public.tours'));
  await assert.rejects(()=>db.query('select * from public.leaderboard()'));
