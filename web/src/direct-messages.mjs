@@ -1,11 +1,11 @@
 import {createChat} from './chat.mjs';
-export function createDirectMessages({db,getUser,escape,memberButton,onChange,resolveAvatar,avatarMarkup,messageIcon}) {
+export function createDirectMessages({db,getUser,escape,memberButton,onChange,resolveAvatar,avatarMarkup,messageIcon,groupHtml=()=>''}) {
   let root=null,selected=null,threads=[],contacts=[],error='',ready=false,timer=null,version=0,searchTerm='',searchRequest=0,loading=false;
   const chats=new Map();
   function html(){
     if(!getUser())return '<section class="card"><h2>Private Nachrichten</h2><p>Melde dich an, um jemandem zu schreiben.</p></section>';
     if(selected)return `<button id="dm-back" class="button outline">← Nachrichten</button>${chats.get(selected.id).html()}`;
-    return `<section class="inbox"><div class="inbox-title"><h2>Nachrichten</h2></div><button id="chat-public" class="conversation-row group-conversation"><span class="message-avatar group-avatar">${messageIcon()}</span><span class="conversation-copy"><strong>Allgemeiner Chat</strong><span>Für alle angemeldeten Mitglieder</span></span><span class="conversation-chevron">›</span></button><form id="dm-search"><label>Person suchen<input name="name" minlength="2" maxlength="32" value="${escape(searchTerm)}" placeholder="Anzeigename" required autocomplete="off"></label><button class="button" type="submit" ${ready?'':'disabled'}>Suchen</button></form><p id="dm-status" role="status"></p><div id="dm-contacts"></div><h3 class="conversation-section">Deine Gespräche</h3><div id="dm-threads"></div></section>`;
+    return `<section class="inbox"><div class="inbox-title"><h2>Nachrichten</h2></div><button id="chat-public" class="conversation-row group-conversation"><span class="message-avatar group-avatar">${messageIcon()}</span><span class="conversation-copy"><strong>Allgemeiner Chat</strong><span>Für alle angemeldeten Mitglieder</span></span><span class="conversation-chevron">›</span></button><form id="dm-search"><label>Person suchen<input name="name" minlength="2" maxlength="32" value="${escape(searchTerm)}" placeholder="Anzeigename" required autocomplete="off"></label><button class="button" type="submit" ${ready?'':'disabled'}>Suchen</button></form><p id="dm-status" role="status"></p><div id="dm-contacts"></div>${groupHtml()}<h3 class="conversation-section">Deine Gespräche</h3><div id="dm-threads"></div></section>`;
   }
   function open(peer){
     if(!getUser()||peer.id===getUser().id)return;

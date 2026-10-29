@@ -1,10 +1,10 @@
 import {avatarMarkup} from './avatars.mjs';
-export function createChat({db,getUser,isAdmin,escape,memberButton,getPeer=null,resolveAvatar=async()=>null}) {
+export function createChat({db,getUser,isAdmin,escape,memberButton,getPeer=null,getGroup=null,resolveAvatar=async()=>null}) {
   let messages=[],draft='',ready=false,error='',sending=false,pending=null,container=null,timer=null,version=0,loading=false;
   const getTime=value=>new Date(value).toLocaleString('de-CH',{timeZone:'Europe/Zurich',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});
   function html(){
     if(!getUser())return '<section class="card"><h2>Gemeinsamer Chat.</h2><p>Melde dich an, um mitzuschreiben.</p></section>';
-    return `<section class="card chat-card"><div class="chat-heading"><h2>${getPeer?avatarMarkup(getPeer().display_name,getPeer().avatarUrl,escape):''}${getPeer?escape(getPeer().display_name):'Allgemeiner Chat'}</h2><button id="chat-refresh" class="text-button">↻ Laden</button></div><p id="chat-status" role="status"></p><div id="chat-messages" class="chat-messages" role="log" aria-label="${getPeer?'Privates Gespräch':'Gemeinsamer Chat'}" aria-live="polite"></div><form id="chat-form"><label for="chat-body">Deine Nachricht</label><textarea id="chat-body" name="body" maxlength="1000" rows="3" placeholder="Was geht am Berg?">${escape(draft)}</textarea><button id="chat-send" class="button" type="submit">Senden</button></form></section>`;
+    return `<section class="card chat-card"><div class="chat-heading"><h2>${getPeer?avatarMarkup(getPeer().display_name,getPeer().avatarUrl,escape):''}${getGroup?escape(getGroup().name):getPeer?escape(getPeer().display_name):'Allgemeiner Chat'}</h2><button id="chat-refresh" class="text-button">↻ Laden</button></div><p id="chat-status" role="status"></p><div id="chat-messages" class="chat-messages" role="log" aria-label="${getGroup?'Gruppenchat':getPeer?'Privates Gespräch':'Gemeinsamer Chat'}" aria-live="polite"></div><form id="chat-form"><label for="chat-body">Deine Nachricht</label><textarea id="chat-body" name="body" maxlength="1000" rows="3" placeholder="Was geht am Berg?">${escape(draft)}</textarea><button id="chat-send" class="button" type="submit">Senden</button></form></section>`;
   }
   function update(){
     if(!container||!getUser())return;
@@ -22,7 +22,8 @@ export function createChat({db,getUser,isAdmin,escape,memberButton,getPeer=null,
     const request=version,userId=getUser().id;loading=true;
     try{
       let query;
-      if(getPeer){const peerId=getPeer().id;query=db.from('direct_messages').select('id,sender_id,recipient_id,body,created_at,profiles:profiles!direct_messages_sender_id_fkey(display_name,avatar_path)').or(`and(sender_id.eq.${userId},recipient_id.eq.${peerId}),and(sender_id.eq.${peerId},recipient_id.eq.${userId})`);}
+      if(getGroup)query=db.from('group_messages').select('id,group_id,user_id,body,created_at,profiles:profiles!group_messages_user_id_fkey(display_name,avatar_path)').eq('group_id',getGroup().id);
+      else if(getPeer){const peerId=getPeer().id;query=db.from('direct_messages').select('id,sender_id,recipient_id,body,created_at,profiles:profiles!direct_messages_sender_id_fkey(display_name,avatar_path)').or(`and(sender_id.eq.${userId},recipient_id.eq.${peerId}),and(sender_id.eq.${peerId},recipient_id.eq.${userId})`);}
       else query=db.from('chat_messages').select('id,user_id,body,created_at,profiles:profiles!chat_messages_user_id_fkey(display_name,avatar_path)');
       const {data,error:failure}=await query.order('created_at',{ascending:false}).order('id',{ascending:false}).limit(100);
       if(request!==version||getUser()?.id!==userId)return;
@@ -36,10 +37,10 @@ export function createChat({db,getUser,isAdmin,escape,memberButton,getPeer=null,
     event.preventDefault();if(sending||!ready||!getUser())return;
     const text=draft.trim();if(!text||text.length>1000)return;
     const userId=getUser().id,request=version;
-    if(!pending||pending.body!==text)pending=getPeer?{id:crypto.randomUUID(),sender_id:userId,recipient_id:getPeer().id,body:text}:{id:crypto.randomUUID(),user_id:userId,body:text};
+    if(!pending||pending.body!==text)pending=getGroup?{id:crypto.randomUUID(),group_id:getGroup().id,user_id:userId,body:text}:getPeer?{id:crypto.randomUUID(),sender_id:userId,recipient_id:getPeer().id,body:text}:{id:crypto.randomUUID(),user_id:userId,body:text};
     sending=true;error='';update();
     try{
-      const {error:failure}=await db.from(getPeer?'direct_messages':'chat_messages').insert(pending);
+      const {error:failure}=await db.from(getGroup?'group_messages':getPeer?'direct_messages':'chat_messages').insert(pending);
       if(request!==version||getUser()?.id!==userId)return;
       // A retry of the same UUID may find the message already saved.
       if(failure&&failure.code!=='23505')throw failure;
@@ -53,7 +54,7 @@ export function createChat({db,getUser,isAdmin,escape,memberButton,getPeer=null,
     const message=messages.find(m=>m.id===id);if(!message||(message.user_id!==getUser().id&&(getPeer||!isAdmin())))return;
     if(!window.confirm('Diese Nachricht endgültig löschen?'))return;
     const request=version;sending=true;update();
-    try{const {data,error:failure}=await db.from(getPeer?'direct_messages':'chat_messages').delete().eq('id',id).select('id');if(request!==version)return;if(failure||!data?.length)throw failure||Error();messages=messages.filter(m=>m.id!==id);error='';await load();}
+    try{const {data,error:failure}=await db.from(getGroup?'group_messages':getPeer?'direct_messages':'chat_messages').delete().eq('id',id).select('id');if(request!==version)return;if(failure||!data?.length)throw failure||Error();messages=messages.filter(m=>m.id!==id);error='';await load();}
     catch{if(request===version)error='Nachricht konnte nicht gelöscht werden. Bitte erneut versuchen.';}
     finally{if(request===version){sending=false;update();}}
   }
